@@ -144,6 +144,9 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
     BackHandler(ekran != Ekran.POCETNA) { ekran = Ekran.POCETNA }
 
     val tjedni by vm.tjedni.collectAsState()
+    // Tjedni pregled otvoren gumbom na Početnoj (ne iz obavijesti)
+    var tjedniNaZahtjev by remember { mutableStateOf(false) }
+    if (tjedniNaZahtjev) tjedni?.let { TjedniDijalog(it, test = false) { tjedniNaZahtjev = false } }
     Obavijesti.dodirnuta.value?.let { info ->
         // Tjedni pregled ima vlastiti prozor s rekapitulacijom; ostale obavijesti prozor s objašnjenjem.
         if (info.vrsta == VrstaObavijesti.TJEDNI) {
@@ -189,7 +192,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onPrethodni = vm::prethodniCiklus,
                 onSljedeci = vm::sljedeciCiklus,
                 onTrenutni = vm::trenutniCiklus,
-                onUrediCiklus = { ekran = Ekran.POSTAVKE },
+                onTjedniPregled = { tjedniNaZahtjev = true },
                 onFilter = vm::postaviFilter,
                 onTransakcija = { sheet = if (it.transakcija.jePrijenos) Sheet.PrijenosInfo(it.transakcija) else Sheet.Transakcije(it.transakcija) },
                 onDodaj = { sheet = Sheet.Transakcije(null) },

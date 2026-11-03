@@ -102,7 +102,8 @@ fun PocetnaEkran(
     onPrethodni: () -> Unit,
     onSljedeci: () -> Unit,
     onTrenutni: () -> Unit,
-    onUrediCiklus: () -> Unit,
+    /** Gumb uz raspon ciklusa: tjedni pregled na zahtjev. */
+    onTjedniPregled: () -> Unit,
     onFilter: (FilterTransakcija) -> Unit,
     onTransakcija: (TransakcijaSKategorijom) -> Unit,
     onDodaj: () -> Unit,
@@ -151,7 +152,7 @@ fun PocetnaEkran(
             ),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            item { Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onUrediCiklus) { biramRaspon = true } }
+            item { Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onTjedniPregled) { biramRaspon = true } }
             item { HeroKartica(s, privatnost, onPregled) }
             item { RacuniTraka(racuni, privatnost.sakrijStanje, onRacun, onNoviRacun, onPrijenos) }
             stickyHeader {
@@ -268,7 +269,7 @@ private fun Zaglavlje(
     onPrethodni: () -> Unit,
     onSljedeci: () -> Unit,
     onTrenutni: () -> Unit,
-    onUredi: () -> Unit,
+    onTjedni: () -> Unit,
     onRaspon: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -290,7 +291,7 @@ private fun Zaglavlje(
             // Dodir na raspon otvara ručni odabir početka i kraja ovog ciklusa.
             BiracCiklusa(HrDatum.raspon(s.ciklus), onPrethodni, onSljedeci, onRaspon)
         }
-        KruzniGumb("edit", "Uredi dan početka ciklusa", onUredi, velicina = 48.dp)
+        KruzniGumb("navChart", "Tjedni pregled", onTjedni, velicina = 48.dp, boja = Neon.Zelena)
     }
 }
 
