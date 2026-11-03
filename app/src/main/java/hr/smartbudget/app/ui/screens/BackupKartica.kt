@@ -123,7 +123,7 @@ fun BackupKartica(vm: BudgetViewModel) {
         }
         if (s.ukljucen) {
             Segmenti(
-                UcestalostBackupa.entries.map { it.naziv },
+                UcestalostBackupa.entries.map { it.kratko },
                 s.ucestalost.ordinal,
                 { backup.postaviUcestalost(UcestalostBackupa.entries[it]) },
             )

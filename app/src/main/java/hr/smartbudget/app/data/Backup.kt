@@ -20,7 +20,10 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-enum class UcestalostBackupa(val naziv: String) { SVAKI_UNOS("Nakon svakog unosa"), TJEDNO("Jednom tjedno") }
+enum class UcestalostBackupa(val naziv: String, val kratko: String) {
+    SVAKI_UNOS("Nakon svakog unosa", "Svaki unos"),
+    TJEDNO("Jednom tjedno", "Tjedno"),
+}
 
 data class StanjeBackupa(
     val ukljucen: Boolean = false,

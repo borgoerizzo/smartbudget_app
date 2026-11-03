@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -60,8 +61,11 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -140,6 +144,11 @@ fun NeonPolje(
     visina: Dp = 52.dp,
     greska: Boolean = false,
     fokusBoja: Color = Neon.Ljubicasta,
+    /**
+     * Unos iznosa "od centa prema eurima": svaka znamenka ulazi s desna (1 → 0,01, 10 → 0,10, 1000 → 10,00),
+     * brisanje miče zadnju znamenku. Vrijednost je uvijek formatirana (1.250,00), kursor stoji na kraju.
+     */
+    uCentima: Boolean = false,
 ) {
     var fokus by remember { mutableStateOf(false) }
     val rub = when {
@@ -147,20 +156,12 @@ fun NeonPolje(
         fokus -> fokusBoja.copy(alpha = .7f)
         else -> Color(0x1FFFFFFF)
     }
-    BasicTextField(
-        value = vrijednost,
-        onValueChange = onPromjena,
-        singleLine = true,
-        textStyle = stil,
-        cursorBrush = SolidColor(fokusBoja),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = tipkovnica,
-            capitalization = if (tipkovnica == KeyboardType.Text) KeyboardCapitalization.Sentences else KeyboardCapitalization.None,
-        ),
-        modifier = modifier
-            .height(visina)
-            .onFocusChanged { fokus = it.isFocused },
-        decorationBox = { inner ->
+    val tipkovnicaOpcije = KeyboardOptions(
+        keyboardType = if (uCentima) KeyboardType.Number else tipkovnica,
+        capitalization = if (tipkovnica == KeyboardType.Text && !uCentima) KeyboardCapitalization.Sentences else KeyboardCapitalization.None,
+    )
+    val mod = modifier.height(visina).onFocusChanged { fokus = it.isFocused }
+    val ukras: @Composable (@Composable () -> Unit) -> Unit = { inner ->
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -174,8 +175,24 @@ fun NeonPolje(
                 if (vrijednost.isEmpty()) Text(placeholder, style = stil.copy(color = Neon.Neaktivno, fontWeight = FontWeight.Normal))
                 inner()
             }
-        },
-    )
+    }
+    if (uCentima) {
+        BasicTextField(
+            value = TextFieldValue(vrijednost, TextRange(vrijednost.length)),
+            onValueChange = { novo ->
+                val znamenke = novo.text.filter { it.isDigit() }.trimStart('0').take(11)
+                onPromjena(if (znamenke.isEmpty()) "" else Novac.broj(znamenke.toLong()))
+            },
+            singleLine = true, textStyle = stil, cursorBrush = SolidColor(fokusBoja),
+            keyboardOptions = tipkovnicaOpcije, modifier = mod, decorationBox = ukras,
+        )
+    } else {
+        BasicTextField(
+            value = vrijednost, onValueChange = onPromjena,
+            singleLine = true, textStyle = stil, cursorBrush = SolidColor(fokusBoja),
+            keyboardOptions = tipkovnicaOpcije, modifier = mod, decorationBox = ukras,
+        )
+    }
 }
 
 /** Segmentirana kontrola (Trošak/Prihod, format izvoza...). */
@@ -196,7 +213,7 @@ fun Segmenti(opcije: List<String>, odabrano: Int, onOdabir: (Int) -> Unit, modif
             Box(
                 Modifier
                     .weight(1f)
-                    .height(44.dp)
+                    .heightIn(min = 44.dp)
                     .then(if (akt) Modifier.neonSjaj(boja, 14.dp, 22.dp, .22f) else Modifier)
                     .clip(RoundedCornerShape(22.dp))
                     .background(if (akt) boja.copy(alpha = .14f) else Color.Transparent)
@@ -204,7 +221,13 @@ fun Segmenti(opcije: List<String>, odabrano: Int, onOdabir: (Int) -> Unit, modif
                     .clickable(role = Role.Tab) { onOdabir(i) },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(o, color = if (akt) boja else Neon.TekstSrednji, fontSize = 14.sp, fontWeight = if (akt) FontWeight.Bold else FontWeight.SemiBold)
+                // Dug tekst se centrira i lomi u najviše dva reda umjesto da se reže (veliki font sustava).
+                Text(
+                    o, color = if (akt) boja else Neon.TekstSrednji, fontSize = 14.sp, lineHeight = 16.sp,
+                    fontWeight = if (akt) FontWeight.Bold else FontWeight.SemiBold,
+                    textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
             }
         }
     }
@@ -253,7 +276,7 @@ fun TransakcijaSheet(
     var tip by remember { mutableStateOf(pravilo?.tip ?: postojeca?.tip ?: pocetniTip) }
     val fokusIznosa = remember { FocusRequester() }
     if (fokusNaIznos) LaunchedEffect(Unit) { runCatching { fokusIznosa.requestFocus() } }
-    var iznos by remember { mutableStateOf((pravilo?.iznosCenti ?: postojeca?.iznosCenti)?.let { Novac.zaUnos(it) } ?: "") }
+    var iznos by remember { mutableStateOf((pravilo?.iznosCenti ?: postojeca?.iznosCenti)?.let { Novac.broj(it) } ?: "") }
     var kategorijaId by remember { mutableStateOf(pravilo?.kategorijaId ?: postojeca?.kategorijaId) }
     var opis by remember { mutableStateOf(pravilo?.opis ?: postojeca?.opis ?: "") }
     var nacin by remember { mutableStateOf(pravilo?.nacinPlacanja ?: postojeca?.nacinPlacanja ?: NacinPlacanja.KARTICA) }
@@ -307,7 +330,7 @@ fun TransakcijaSheet(
                 iznos, { iznos = it; greska = null },
                 Modifier.fillMaxWidth().focusRequester(fokusIznosa),
                 placeholder = "0,00",
-                tipkovnica = KeyboardType.Decimal,
+                uCentima = true,
                 stil = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = bojaTipa, fontFeatureSettings = "tnum"),
                 visina = 64.dp,
                 greska = greska != null,
@@ -563,7 +586,7 @@ fun KategorijaSheet(
     var tip by remember { mutableStateOf(postojeca?.tip ?: TipTransakcije.TROSAK) }
     var ikona by remember { mutableStateOf(postojeca?.ikonaNaziv ?: "cart") }
     var boja by remember { mutableStateOf(postojeca?.bojaHex ?: "#9D4EDD") }
-    var limit by remember { mutableStateOf(postojeca?.mjesecniLimitCenti?.let { Novac.zaUnos(it) } ?: "") }
+    var limit by remember { mutableStateOf(postojeca?.mjesecniLimitCenti?.let { Novac.broj(it) } ?: "") }
     var greska by remember { mutableStateOf<String?>(null) }
     var potvrda by remember { mutableStateOf(false) }
     val c = hexBoja(boja)
@@ -659,7 +682,7 @@ fun KategorijaSheet(
                         limit, { limit = it; greska = null },
                         Modifier.width(140.dp),
                         placeholder = "—",
-                        tipkovnica = KeyboardType.Decimal,
+                        uCentima = true,
                         stil = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Neon.Tekst, textAlign = TextAlign.End, fontFeatureSettings = "tnum"),
                         visina = 44.dp,
                         fokusBoja = c,
@@ -668,7 +691,7 @@ fun KategorijaSheet(
                 val vrijednost = (Novac.parsiraj(limit) ?: 0L) / 100f
                 Slider(
                     value = vrijednost.coerceIn(0f, 1000f),
-                    onValueChange = { limit = Novac.zaUnos((it / 10f).toLong() * 1000L) },
+                    onValueChange = { limit = Novac.broj((it / 10f).toLong() * 1000L).let { v -> if (v == "0,00") "" else v } },
                     valueRange = 0f..1000f,
                     colors = SliderDefaults.colors(thumbColor = Neon.Tekst, activeTrackColor = c, inactiveTrackColor = Color(0x1AFFFFFF)),
                 )
