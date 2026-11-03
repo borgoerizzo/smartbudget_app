@@ -121,6 +121,8 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onFilter = vm::postaviFilter,
                 onTransakcija = { sheet = Sheet.Transakcije(it.transakcija) },
                 onDodaj = { sheet = Sheet.Transakcije(null) },
+                onSpremiRaspon = vm::postaviRasponCiklusa,
+                onVratiZadaniRaspon = vm::vratiZadaniRaspon,
             )
             Ekran.ANALITIKA -> AnalitikaEkran(analitika, vm::prethodniCiklus, vm::sljedeciCiklus, vm::trenutniCiklus, vm::postaviBrojCiklusa)
             Ekran.BUDZETI -> BudzetiEkran(

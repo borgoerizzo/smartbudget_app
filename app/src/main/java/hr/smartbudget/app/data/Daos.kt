@@ -103,6 +103,27 @@ interface PonavljajuciDao {
 }
 
 @Dao
+interface PrilagodbaDao {
+    @Query("SELECT * FROM prilagodbe_ciklusa")
+    fun promatrajSve(): Flow<List<PrilagodbaCiklusa>>
+
+    @Query("SELECT * FROM prilagodbe_ciklusa")
+    suspend fun sve(): List<PrilagodbaCiklusa>
+
+    @Upsert
+    suspend fun spremi(p: PrilagodbaCiklusa)
+
+    @Query("DELETE FROM prilagodbe_ciklusa WHERE sidro = :sidro")
+    suspend fun obrisi(sidro: String)
+
+    @Insert
+    suspend fun umetni(lista: List<PrilagodbaCiklusa>)
+
+    @Query("DELETE FROM prilagodbe_ciklusa")
+    suspend fun obrisiSve()
+}
+
+@Dao
 interface PostavkeDao {
     @Query("SELECT * FROM postavke_ciklusa WHERE id = 1")
     fun promatraj(): Flow<PostavkeCiklusa?>

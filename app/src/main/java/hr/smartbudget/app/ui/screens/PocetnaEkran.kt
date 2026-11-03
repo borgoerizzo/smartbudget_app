@@ -25,7 +25,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,14 +84,24 @@ fun PocetnaEkran(
     onFilter: (FilterTransakcija) -> Unit,
     onTransakcija: (TransakcijaSKategorijom) -> Unit,
     onDodaj: () -> Unit,
+    onSpremiRaspon: (LocalDate, LocalDate) -> Unit,
+    onVratiZadaniRaspon: () -> Unit,
 ) {
+    var biramRaspon by remember { mutableStateOf(false) }
+    if (biramRaspon) {
+        RasponCiklusaDijalog(
+            s, onZatvori = { biramRaspon = false },
+            onSpremi = { od, doDana -> biramRaspon = false; onSpremiRaspon(od, doDana) },
+            onVratiZadano = { biramRaspon = false; onVratiZadaniRaspon() },
+        )
+    }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 132.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            item { Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onUrediCiklus) }
+            item { Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onUrediCiklus) { biramRaspon = true } }
             item { HeroKartica(s) }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -119,16 +142,91 @@ fun PocetnaEkran(
 }
 
 @Composable
-private fun Zaglavlje(s: PocetnaStanje, onPrethodni: () -> Unit, onSljedeci: () -> Unit, onTrenutni: () -> Unit, onUredi: () -> Unit) {
+private fun Zaglavlje(
+    s: PocetnaStanje,
+    onPrethodni: () -> Unit,
+    onSljedeci: () -> Unit,
+    onTrenutni: () -> Unit,
+    onUredi: () -> Unit,
+    onRaspon: () -> Unit,
+) {
     Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                if (s.jeAktivni) "AKTIVNI OBRAČUNSKI CIKLUS" else "OBRAČUNSKI CIKLUS · dodirni za trenutni",
-                color = Neon.TekstSiv, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp,
-            )
-            BiracCiklusa(HrDatum.raspon(s.ciklus), onPrethodni, onSljedeci, onTrenutni)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    (if (s.jeAktivni) "AKTIVNI CIKLUS" else "OBRAČUNSKI CIKLUS") + if (s.prilagoden) " · RUČNI RASPON" else "",
+                    color = if (s.prilagoden) Neon.LjubicastaTekst else Neon.TekstSiv,
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                if (!s.jeAktivni) {
+                    Text(
+                        "Danas", color = Neon.Cijan, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onTrenutni).padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            // Dodir na raspon otvara ručni odabir početka i kraja ovog ciklusa.
+            BiracCiklusa(HrDatum.raspon(s.ciklus), onPrethodni, onSljedeci, onRaspon)
         }
         KruzniGumb("edit", "Uredi dan početka ciklusa", onUredi, velicina = 48.dp)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RasponCiklusaDijalog(
+    s: PocetnaStanje,
+    onZatvori: () -> Unit,
+    onSpremi: (LocalDate, LocalDate) -> Unit,
+    onVratiZadano: () -> Unit,
+) {
+    fun ms(d: LocalDate) = d.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    fun dan(ms: Long) = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
+    val st = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = ms(s.ciklus.pocetak),
+        initialSelectedEndDateMillis = ms(s.ciklus.kraj),
+        initialDisplayedMonthMillis = ms(s.ciklus.pocetak),
+    )
+    DatePickerDialog(
+        onDismissRequest = onZatvori,
+        confirmButton = {
+            TextButton(
+                {
+                    val od = st.selectedStartDateMillis
+                    val doDana = st.selectedEndDateMillis
+                    if (od != null && doDana != null) onSpremi(dan(od), dan(doDana))
+                },
+                enabled = st.selectedStartDateMillis != null && st.selectedEndDateMillis != null,
+            ) { Text("Spremi", color = Neon.Zelena, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            Row {
+                if (s.prilagoden) TextButton(onVratiZadano) { Text("Vrati zadano", color = Neon.LjubicastaTekst) }
+                TextButton(onZatvori) { Text("Odustani", color = Neon.TekstSiv) }
+            }
+        },
+        colors = DatePickerDefaults.colors(containerColor = Neon.Sheet),
+    ) {
+        DateRangePicker(
+            st,
+            modifier = Modifier.weight(1f),
+            title = {
+                Column(Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp)) {
+                    Text("Raspon ovog ciklusa", style = Tip.naslovKartice)
+                    Text(
+                        "Odaberite početak i kraj. Susjedni ciklusi se prilagode sami, bez preklapanja.",
+                        style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, lineHeight = 16.sp),
+                    )
+                }
+            },
+            colors = DatePickerDefaults.colors(
+                containerColor = Neon.Sheet,
+                selectedDayContainerColor = Neon.Zelena, selectedDayContentColor = Neon.NaGumbu,
+                dayInSelectionRangeContainerColor = Neon.Zelena.copy(alpha = .18f), dayInSelectionRangeContentColor = Neon.Tekst,
+                todayDateBorderColor = Neon.Cijan, todayContentColor = Neon.Cijan,
+            ),
+        )
     }
 }
 
@@ -302,10 +400,12 @@ fun StavkaTransakcije(t: TransakcijaSKategorijom, onClick: () -> Unit) {
                 style = Tip.iznos, color = if (prihod) Neon.Zelena else Neon.Crvena,
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.weight(1f, fill = false)) { PillKategorije(t.kategorija) }
-            Spacer(Modifier.weight(1f))
-            Text("${t.transakcija.nacinPlacanja} · ${HrDatum.vrijeme(t.vrijeme())}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) { PillKategorije(t.kategorija) }
+            if (t.transakcija.ponavljajuciId != null) {
+                Icon(Ikone.ikona("repeat"), "Ponavljajući unos", Modifier.size(14.dp), tint = Neon.LjubicastaTekst)
+            }
+            Text("${t.transakcija.nacinPlacanja} · ${HrDatum.vrijeme(t.vrijeme())}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal), maxLines = 1)
         }
     }
 }

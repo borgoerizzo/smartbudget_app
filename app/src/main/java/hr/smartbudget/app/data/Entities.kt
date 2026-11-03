@@ -110,6 +110,16 @@ data class PostavkeCiklusa(
     val nacinObradeKrajaMjeseca: Boolean = true,
 )
 
+/**
+ * Ručno zadani početak jednog ciklusa (umjesto zadanog dana u mjesecu).
+ * [sidro] je mjesec ciklusa u obliku "2026-10"; kraj ciklusa je dan prije početka sljedećeg.
+ */
+@Entity(tableName = "prilagodbe_ciklusa")
+data class PrilagodbaCiklusa(
+    @PrimaryKey val sidro: String,
+    val pocetakEpochDan: Long,
+)
+
 data class TransakcijaSKategorijom(
     @Embedded val transakcija: Transakcija,
     @Relation(parentColumn = "kategorijaId", entityColumn = "id")

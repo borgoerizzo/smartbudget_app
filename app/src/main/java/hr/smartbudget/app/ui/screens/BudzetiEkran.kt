@@ -210,7 +210,10 @@ private fun PonavljajuciKartica(
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(p.opis.ifBlank { r.kategorija.naziv }, style = Tip.tijelo.copy(fontSize = 14.sp), maxLines = 1)
                     Text(
-                        if (p.aktivan) "Svakog ${p.danUMjesecu}. · sljedeći ${HrDatum.kratko(Ponavljanje.sljedeciDatum(p))}" else "Pauzirano",
+                        if (!p.aktivan) "Pauzirano"
+                        else "Svakog ${p.danUMjesecu}. · " +
+                            (p.zadnjiEpochDan?.let { "upisano ${HrDatum.kratko(java.time.LocalDate.ofEpochDay(it))} · " } ?: "") +
+                            "sljedeći ${HrDatum.kratko(Ponavljanje.sljedeciDatum(p))}",
                         style = Tip.oznaka.copy(fontWeight = FontWeight.Normal),
                     )
                 }

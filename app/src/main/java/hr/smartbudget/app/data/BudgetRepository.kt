@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 import androidx.room.withTransaction
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 
 /**
@@ -36,8 +37,36 @@ class BudgetRepository private constructor(private val context: Context) {
 
     suspend fun postavke(): PostavkeCiklusa = pDao.dohvati() ?: PostavkeCiklusa()
 
-    suspend fun ciklusZa(datum: LocalDate): Ciklus =
-        postavke().let { CycleManager(it.pocetniDanUCiklusu, it.nacinObradeKrajaMjeseca).ciklusZa(datum) }
+    /** Izračun ciklusa iz postavki i ručnih prilagodbi raspona. */
+    suspend fun cycleManager(): CycleManager =
+        postavke().let { CycleManager(it.pocetniDanUCiklusu, it.nacinObradeKrajaMjeseca, prilagodbeMapa(db.prilagodbe().sve())) }
+
+    suspend fun ciklusZa(datum: LocalDate): Ciklus = cycleManager().ciklusZa(datum)
+
+    /**
+     * Ručni raspon ciklusa [sidro]: početak se sprema za taj ciklus, a kraj kao početak sljedećeg.
+     * Vrijednost jednaka zadanoj se ne sprema (briše prilagodbu). Vraća poruku o grešci ili null.
+     */
+    suspend fun postaviRasponCiklusa(sidro: YearMonth, od: LocalDate, doDana: LocalDate): String? {
+        val cm = cycleManager()
+        cm.provjeriRaspon(sidro, od, doDana)?.let { return it }
+        val pDao = db.prilagodbe()
+        db.withTransaction {
+            suspend fun spremi(m: YearMonth, pocetak: LocalDate) = if (pocetak == cm.zadaniPocetak(m)) pDao.obrisi(m.toString())
+            else pDao.spremi(PrilagodbaCiklusa(m.toString(), pocetak.toEpochDay()))
+            spremi(sidro, od)
+            spremi(sidro.plusMonths(1), doDana.plusDays(1))
+        }
+        promjena()
+        return null
+    }
+
+    /** Vraća ciklus [sidro] na zadani raspon (briše prilagodbu početka i kraja). */
+    suspend fun vratiZadaniRaspon(sidro: YearMonth) {
+        db.prilagodbe().obrisi(sidro.toString())
+        db.prilagodbe().obrisi(sidro.plusMonths(1).toString())
+        promjena()
+    }
 
     /** Sprema transakciju; vraća poruke za korisnika (potvrda i eventualno upozorenje o limitu). */
     suspend fun spremiTransakciju(t: Transakcija): List<String> {
@@ -150,6 +179,9 @@ class BudgetRepository private constructor(private val context: Context) {
     data class Sazetak(val stanje: Long, val ciklus: Zbroj, val raspon: Ciklus)
 
     companion object {
+        fun prilagodbeMapa(lista: List<PrilagodbaCiklusa>): Map<YearMonth, LocalDate> =
+            lista.mapNotNull { p -> runCatching { YearMonth.parse(p.sidro) to LocalDate.ofEpochDay(p.pocetakEpochDan) }.getOrNull() }.toMap()
+
         @Volatile private var instance: BudgetRepository? = null
         fun get(context: Context): BudgetRepository = instance ?: synchronized(this) {
             instance ?: BudgetRepository(context.applicationContext).also { instance = it }

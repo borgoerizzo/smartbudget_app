@@ -249,7 +249,8 @@ fun PostavkeEkran(vm: BudgetViewModel) {
                         ),
                     )
                 }
-                val c = CycleManager(postavke.pocetniDanUCiklusu, postavke.nacinObradeKrajaMjeseca).ciklusZa(LocalDate.now())
+                val cm by vm.cycleManager.collectAsState()
+                val c = cm.ciklusZa(LocalDate.now())
                 Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                     Text(opisCiklusa(c, postavke.pocetniDanUCiklusu, postavke.nacinObradeKrajaMjeseca), style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, lineHeight = 17.sp))
                 }

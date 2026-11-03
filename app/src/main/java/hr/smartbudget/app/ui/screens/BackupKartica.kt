@@ -122,10 +122,14 @@ fun BackupKartica(vm: BudgetViewModel) {
             )
         }
         if (s.ukljucen) {
+            // Treća opcija "Sada" ne mijenja učestalost, nego odmah radi kopiju.
             Segmenti(
-                UcestalostBackupa.entries.map { it.kratko },
+                UcestalostBackupa.entries.map { it.kratko } + (if (s.radi) "Spremam…" else "Sada"),
                 s.ucestalost.ordinal,
-                { backup.postaviUcestalost(UcestalostBackupa.entries[it]) },
+                { i ->
+                    if (i < UcestalostBackupa.entries.size) backup.postaviUcestalost(UcestalostBackupa.entries[i])
+                    else if (!s.radi) scope.launch { vm.poruka(withContext(Dispatchers.IO) { backup.napraviKopiju() }) }
+                },
             )
         }
 

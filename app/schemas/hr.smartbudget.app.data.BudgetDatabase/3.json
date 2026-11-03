@@ -1,0 +1,307 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "01afb1a80085773e7546ce24d78de9f3",
+    "entities": [
+      {
+        "tableName": "transakcije",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tip` TEXT NOT NULL, `iznosCenti` INTEGER NOT NULL, `datumVrijeme` INTEGER NOT NULL, `kategorijaId` INTEGER NOT NULL, `opis` TEXT NOT NULL, `nacinPlacanja` TEXT NOT NULL, `ponavljajuciId` INTEGER, FOREIGN KEY(`kategorijaId`) REFERENCES `kategorije`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tip",
+            "columnName": "tip",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "iznosCenti",
+            "columnName": "iznosCenti",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "datumVrijeme",
+            "columnName": "datumVrijeme",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kategorijaId",
+            "columnName": "kategorijaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "opis",
+            "columnName": "opis",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nacinPlacanja",
+            "columnName": "nacinPlacanja",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ponavljajuciId",
+            "columnName": "ponavljajuciId",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transakcije_kategorijaId",
+            "unique": false,
+            "columnNames": [
+              "kategorijaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transakcije_kategorijaId` ON `${TABLE_NAME}` (`kategorijaId`)"
+          },
+          {
+            "name": "index_transakcije_datumVrijeme",
+            "unique": false,
+            "columnNames": [
+              "datumVrijeme"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transakcije_datumVrijeme` ON `${TABLE_NAME}` (`datumVrijeme`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "kategorije",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "kategorijaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "kategorije",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `naziv` TEXT NOT NULL, `bojaHex` TEXT NOT NULL, `ikonaNaziv` TEXT NOT NULL, `tip` TEXT NOT NULL, `mjesecniLimitCenti` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "naziv",
+            "columnName": "naziv",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bojaHex",
+            "columnName": "bojaHex",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ikonaNaziv",
+            "columnName": "ikonaNaziv",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tip",
+            "columnName": "tip",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mjesecniLimitCenti",
+            "columnName": "mjesecniLimitCenti",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "postavke_ciklusa",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `pocetniDanUCiklusu` INTEGER NOT NULL, `nacinObradeKrajaMjeseca` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pocetniDanUCiklusu",
+            "columnName": "pocetniDanUCiklusu",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nacinObradeKrajaMjeseca",
+            "columnName": "nacinObradeKrajaMjeseca",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "ponavljajuci_unosi",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tip` TEXT NOT NULL, `iznosCenti` INTEGER NOT NULL, `kategorijaId` INTEGER NOT NULL, `opis` TEXT NOT NULL, `nacinPlacanja` TEXT NOT NULL, `danUMjesecu` INTEGER NOT NULL, `vrijemeMinuta` INTEGER NOT NULL, `pocetakEpochDan` INTEGER NOT NULL, `zadnjiEpochDan` INTEGER, `aktivan` INTEGER NOT NULL, FOREIGN KEY(`kategorijaId`) REFERENCES `kategorije`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tip",
+            "columnName": "tip",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "iznosCenti",
+            "columnName": "iznosCenti",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kategorijaId",
+            "columnName": "kategorijaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "opis",
+            "columnName": "opis",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nacinPlacanja",
+            "columnName": "nacinPlacanja",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "danUMjesecu",
+            "columnName": "danUMjesecu",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vrijemeMinuta",
+            "columnName": "vrijemeMinuta",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pocetakEpochDan",
+            "columnName": "pocetakEpochDan",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zadnjiEpochDan",
+            "columnName": "zadnjiEpochDan",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "aktivan",
+            "columnName": "aktivan",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ponavljajuci_unosi_kategorijaId",
+            "unique": false,
+            "columnNames": [
+              "kategorijaId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ponavljajuci_unosi_kategorijaId` ON `${TABLE_NAME}` (`kategorijaId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "kategorije",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "kategorijaId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "prilagodbe_ciklusa",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sidro` TEXT NOT NULL, `pocetakEpochDan` INTEGER NOT NULL, PRIMARY KEY(`sidro`))",
+        "fields": [
+          {
+            "fieldPath": "sidro",
+            "columnName": "sidro",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pocetakEpochDan",
+            "columnName": "pocetakEpochDan",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sidro"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '01afb1a80085773e7546ce24d78de9f3')"
+    ]
+  }
+}

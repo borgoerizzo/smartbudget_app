@@ -8,8 +8,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class],
-    version = 2,
+    entities = [Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class, PrilagodbaCiklusa::class],
+    version = 3,
     exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
@@ -17,6 +17,7 @@ abstract class BudgetDatabase : RoomDatabase() {
     abstract fun kategorije(): KategorijaDao
     abstract fun postavke(): PostavkeDao
     abstract fun ponavljajuci(): PonavljajuciDao
+    abstract fun prilagodbe(): PrilagodbaDao
 
     companion object {
         @Volatile private var instance: BudgetDatabase? = null
@@ -24,7 +25,7 @@ abstract class BudgetDatabase : RoomDatabase() {
         fun get(context: Context): BudgetDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, BudgetDatabase::class.java, "smartbudget.db")
                 .addCallback(Pocetni)
-                .addMigrations(MIGRACIJA_1_2)
+                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3)
                 .build()
                 .also { instance = it }
         }
@@ -42,6 +43,15 @@ abstract class BudgetDatabase : RoomDatabase() {
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_ponavljajuci_unosi_kategorijaId` ON `ponavljajuci_unosi` (`kategorijaId`)")
             db.execSQL("ALTER TABLE `transakcije` ADD COLUMN `ponavljajuciId` INTEGER")
+        }
+    }
+
+    /** v3: ručno zadani rasponi pojedinih ciklusa. */
+    private object MIGRACIJA_2_3 : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `prilagodbe_ciklusa` (`sidro` TEXT NOT NULL, `pocetakEpochDan` INTEGER NOT NULL, PRIMARY KEY(`sidro`))",
+            )
         }
     }
 

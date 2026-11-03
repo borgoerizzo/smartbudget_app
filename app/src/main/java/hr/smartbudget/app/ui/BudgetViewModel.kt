@@ -67,6 +67,8 @@ data class PocetnaStanje(
     val prijenos: Long,
     val dnevniProsjek: Long,
     val filter: FilterTransakcija,
+    /** Raspon ovog ciklusa je ručno promijenjen. */
+    val prilagoden: Boolean = false,
     val grupe: List<GrupaDana>,
     val ucitano: Boolean,
 ) {
@@ -143,8 +145,13 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     val postavke: StateFlow<PostavkeCiklusa> = pDao.promatraj().map { it ?: PostavkeCiklusa() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, PostavkeCiklusa())
 
-    val ciklus: StateFlow<Ciklus> = combine(postavke, pomak, danas) { p, o, d ->
-        CycleManager(p.pocetniDanUCiklusu, p.nacinObradeKrajaMjeseca).ciklus(d, o)
+    /** Izračun ciklusa: zadani dan u mjesecu + ručno promijenjeni rasponi pojedinih ciklusa. */
+    val cycleManager: StateFlow<CycleManager> = combine(postavke, repo.db.prilagodbe().promatrajSve()) { p, pr ->
+        CycleManager(p.pocetniDanUCiklusu, p.nacinObradeKrajaMjeseca, BudgetRepository.prilagodbeMapa(pr))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, CycleManager(1))
+
+    val ciklus: StateFlow<Ciklus> = combine(cycleManager, pomak, danas) { cm, o, d ->
+        cm.ciklus(d, o)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, CycleManager(1).ciklusZa(LocalDate.now()))
 
     val kategorije: StateFlow<List<Kategorija>> = kDao.promatrajSve()
@@ -187,14 +194,14 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
             prijenos = prijenos,
             dnevniProsjek = if (proteklo > 0) z.troskovi / proteklo else 0,
             filter = f,
+            prilagoden = cycleManager.value.jePrilagoden(c.sidro),
             grupe = grupe,
             ucitano = tx != null,
         )
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, PocetnaStanje(ciklus.value, true, 1, Zbroj(), 0, 0, 0, FilterTransakcija.SVE, emptyList(), false))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, PocetnaStanje(ciklus.value, true, 1, Zbroj(), 0, 0, 0, FilterTransakcija.SVE, grupe = emptyList(), ucitano = false))
 
     /** Transakcije zadnjih N ciklusa (zaključno s odabranim) za povijest i usporedbu. */
-    private val transakcijePovijesti = combine(ciklus, brojCiklusa, postavke) { c, n, p ->
-        val cm = CycleManager(p.pocetniDanUCiklusu, p.nacinObradeKrajaMjeseca)
+    private val transakcijePovijesti = combine(ciklus, brojCiklusa, cycleManager) { c, n, cm ->
         (n - 1 downTo 0).map { cm.ciklusZaSidro(c.sidro.minusMonths(it.toLong())) }
     }.flatMapLatest { ciklusi ->
         tDao.promatrajRaspon(ciklusi.first().odMillis(), ciklusi.last().doMillisIskljucivo()).map { ciklusi to it }
@@ -303,9 +310,18 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Ciklus pomaknut za [pomakOdTrenutnog] u odnosu na današnji (za izvoz "Prošli ciklus"). */
-    fun ciklusOdDanas(pomakOdTrenutnog: Int): Ciklus {
-        val p = postavke.value
-        return CycleManager(p.pocetniDanUCiklusu, p.nacinObradeKrajaMjeseca).ciklus(LocalDate.now(), pomakOdTrenutnog)
+    fun ciklusOdDanas(pomakOdTrenutnog: Int): Ciklus = cycleManager.value.ciklus(LocalDate.now(), pomakOdTrenutnog)
+
+    /** Ručni raspon prikazanog ciklusa (npr. 9. 10. – 9. 11. umjesto zadanog 10. 10. – 9. 11.). */
+    fun postaviRasponCiklusa(od: LocalDate, doDana: LocalDate) = repo.opseg.launch {
+        val c = ciklus.value
+        val greska = repo.postaviRasponCiklusa(c.sidro, od, doDana)
+        _poruke.tryEmit(greska ?: "Raspon ciklusa: ${HrDatum.kratko(od)} – ${HrDatum.kratko(doDana)}")
+    }
+
+    fun vratiZadaniRaspon() = repo.opseg.launch {
+        repo.vratiZadaniRaspon(ciklus.value.sidro)
+        _poruke.tryEmit("Ciklus vraćen na zadani raspon")
     }
 
     suspend fun izvezi(

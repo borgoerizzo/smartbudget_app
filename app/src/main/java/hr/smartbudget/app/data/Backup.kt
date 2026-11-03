@@ -44,6 +44,7 @@ data class SadrzajKopije(
     val transakcije: List<Transakcija>,
     val ponavljajuci: List<PonavljajuciUnos>,
     val postavke: PostavkeCiklusa,
+    val prilagodbe: List<PrilagodbaCiklusa> = emptyList(),
 )
 
 /**
@@ -162,6 +163,7 @@ class BackupManager private constructor(private val context: Context) {
                 transakcije = db.transakcije().sve(),
                 ponavljajuci = db.ponavljajuci().sve(),
                 postavke = repo.postavke(),
+                prilagodbe = db.prilagodbe().sve(),
             )
         }
     }
@@ -183,13 +185,16 @@ class BackupManager private constructor(private val context: Context) {
             db.transakcije().umetni(k.transakcije)
             db.ponavljajuci().umetni(k.ponavljajuci)
             db.postavke().spremi(k.postavke)
+            db.prilagodbe().obrisiSve()
+            db.prilagodbe().umetni(k.prilagodbe)
         }
         hr.smartbudget.app.widget.StanjeWidget.osvjezi(context)
     }
 
     companion object {
         const val ZADRZI = 10
-        private const val VERZIJA_FORMATA = 1
+        /** 2: dodani ručni rasponi ciklusa (kopije formata 1 i dalje se mogu vratiti). */
+        private const val VERZIJA_FORMATA = 2
 
         @Volatile private var instance: BackupManager? = null
         fun get(context: Context): BackupManager = instance ?: synchronized(this) {
@@ -217,6 +222,9 @@ class BackupManager private constructor(private val context: Context) {
                     put("kategorijaId", it.kategorijaId); put("opis", it.opis); put("nacinPlacanja", it.nacinPlacanja)
                     put("ponavljajuciId", it.ponavljajuciId ?: JSONObject.NULL)
                 }
+            }))
+            put("prilagodbeCiklusa", JSONArray(k.prilagodbe.map {
+                JSONObject().apply { put("sidro", it.sidro); put("pocetakEpochDan", it.pocetakEpochDan) }
             }))
             put("ponavljajuci", JSONArray(k.ponavljajuci.map {
                 JSONObject().apply {
@@ -249,6 +257,9 @@ class BackupManager private constructor(private val context: Context) {
                         it.getLong("id"), TipTransakcije.valueOf(it.getString("tip")), it.getLong("iznosCenti"), it.getLong("datumVrijeme"),
                         it.getLong("kategorijaId"), it.optString("opis"), it.optString("nacinPlacanja"), it.dugiIliNull("ponavljajuciId"),
                     )
+                },
+                prilagodbe = (o.optJSONArray("prilagodbeCiklusa") ?: JSONArray()).mapiraj {
+                    PrilagodbaCiklusa(it.getString("sidro"), it.getLong("pocetakEpochDan"))
                 },
                 ponavljajuci = o.getJSONArray("ponavljajuci").mapiraj {
                     PonavljajuciUnos(
