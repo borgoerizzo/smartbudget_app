@@ -59,6 +59,7 @@ object Ikone {
         "trash" to "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13",
         "clock" to "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18 M12 7v5l3 2",
         "x" to "M6 6l12 12 M18 6 6 18",
+        "search" to "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14 M16.5 16.5 21 21",
         "restore" to "M4 12a8 8 0 1 0 2.3-5.7 M4 4v4h4 M12 8v4l3 2",
     )
 

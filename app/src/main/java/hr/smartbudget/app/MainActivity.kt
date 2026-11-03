@@ -35,6 +35,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import hr.smartbudget.app.data.BudgetRepository
 import hr.smartbudget.app.data.Kategorija
 import hr.smartbudget.app.data.PonavljajuciUnos
+import hr.smartbudget.app.data.TipTransakcije
+import hr.smartbudget.app.ui.screens.PregledSheet
 import hr.smartbudget.app.data.PonavljajuciWorker
 import hr.smartbudget.app.widget.StanjeWidget
 import kotlinx.coroutines.launch
@@ -79,6 +81,8 @@ class MainActivity : ComponentActivity() {
 private sealed interface Sheet {
     data class Transakcije(val t: Transakcija?) : Sheet
     data class Kategorije(val k: Kategorija?) : Sheet
+    /** Pregled prihoda ili rashoda ciklusa. */
+    data class Pregled(val tip: TipTransakcije) : Sheet
     /** Pravilo ponavljanja; null = novo. */
     data class Pravilo(val p: PonavljajuciUnos?) : Sheet
 }
@@ -123,6 +127,8 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onDodaj = { sheet = Sheet.Transakcije(null) },
                 onSpremiRaspon = vm::postaviRasponCiklusa,
                 onVratiZadaniRaspon = vm::vratiZadaniRaspon,
+                onPregled = { sheet = Sheet.Pregled(it) },
+                onPretraga = vm::postaviPretragu,
             )
             Ekran.ANALITIKA -> AnalitikaEkran(analitika, vm::prethodniCiklus, vm::sljedeciCiklus, vm::trenutniCiklus, vm::postaviBrojCiklusa)
             Ekran.BUDZETI -> BudzetiEkran(
@@ -166,6 +172,13 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
             onObrisi = vm::obrisiTransakciju,
             onZatvori = { sheet = null },
             onSpremiPonavljajuci = vm::spremiPonavljajuci,
+        )
+        is Sheet.Pregled -> PregledSheet(
+            tip = s.tip,
+            ciklus = pocetna.ciklus,
+            sveTransakcije = pocetna.transakcije,
+            onTransakcija = { sheet = Sheet.Transakcije(it.transakcija) },
+            onZatvori = { sheet = null },
         )
         is Sheet.Pravilo -> TransakcijaSheet(
             postojeca = null,

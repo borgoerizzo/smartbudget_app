@@ -1,5 +1,6 @@
 package hr.smartbudget.app.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,6 +32,19 @@ import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDateRangePickerState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +71,7 @@ import hr.smartbudget.app.data.TipTransakcije
 import hr.smartbudget.app.data.TransakcijaSKategorijom
 import hr.smartbudget.app.domain.HrDatum
 import hr.smartbudget.app.domain.Novac
+import hr.smartbudget.app.domain.datum
 import hr.smartbudget.app.domain.vrijeme
 import hr.smartbudget.app.ui.FilterTransakcija
 import hr.smartbudget.app.ui.GrupaDana
@@ -74,6 +89,7 @@ import hr.smartbudget.app.ui.neonSjaj
 import hr.smartbudget.app.ui.theme.Neon
 import hr.smartbudget.app.ui.theme.Tip
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PocetnaEkran(
     s: PocetnaStanje,
@@ -86,6 +102,8 @@ fun PocetnaEkran(
     onDodaj: () -> Unit,
     onSpremiRaspon: (LocalDate, LocalDate) -> Unit,
     onVratiZadaniRaspon: () -> Unit,
+    onPregled: (TipTransakcije) -> Unit,
+    onPretraga: (String) -> Unit,
 ) {
     var biramRaspon by remember { mutableStateOf(false) }
     if (biramRaspon) {
@@ -95,14 +113,39 @@ fun PocetnaEkran(
             onVratiZadano = { biramRaspon = false; onVratiZadaniRaspon() },
         )
     }
+    val stanjeListe = rememberLazyListState()
+    var fokusPretrage by remember { mutableStateOf(false) }
+    // Visina tipkovnice: popis dobiva toliki donji razmak, pa ništa ne ostaje skriveno ispod nje.
+    val tipkovnicaDno = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+    val pomakRezultata = with(LocalDensity.current) { (VISINA_PRETRAGE + 8.dp).roundToPx() }
+    // Dok je pretraga u fokusu: polje zalijepljeno na vrhu, prvi rezultat (stavka 4) odmah ispod njega,
+    // ponovno nakon svakog znaka i kad se tipkovnica pojavi.
+    LaunchedEffect(fokusPretrage, tipkovnicaDno) {
+        if (fokusPretrage) stanjeListe.animateScrollToItem(4, -pomakRezultata)
+    }
+    // Kod tipkanja bez animacije i samo ako je popis pomaknut, da brzi unos ne izgubi znak.
+    LaunchedEffect(s.pretraga, s.grupe.size) {
+        if (fokusPretrage && stanjeListe.firstVisibleItemIndex != 3 && stanjeListe.firstVisibleItemIndex != 4) {
+            stanjeListe.scrollToItem(4, -pomakRezultata)
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 132.dp),
+            state = stanjeListe,
+            contentPadding = PaddingValues(
+                start = 20.dp, end = 20.dp, top = 20.dp,
+                bottom = maxOf(132.dp, tipkovnicaDno + 16.dp),
+            ),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             item { Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onUrediCiklus) { biramRaspon = true } }
-            item { HeroKartica(s) }
+            item { HeroKartica(s, onPregled) }
+            stickyHeader {
+                Box(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    PoljePretrage(s.pretraga, onPretraga) { fokusPretrage = it }
+                }
+            }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("Transakcije", style = Tip.naslov)
@@ -114,14 +157,21 @@ fun PocetnaEkran(
             if (s.ucitano && s.grupe.isEmpty()) {
                 item {
                     PraznoStanje(
-                        naslov = if (s.filter == FilterTransakcija.SVE) "Još nema transakcija" else "Nema transakcija za ovaj filter",
-                        tekst = "Dodajte prvi prihod ili trošak u ovom ciklusu gumbom +.",
-                        akcija = "Dodaj transakciju",
+                        naslov = when {
+                            s.pretraga.isNotBlank() -> "Nema rezultata za \"${s.pretraga.trim()}\""
+                            s.filter == FilterTransakcija.SVE -> "Još nema transakcija"
+                            else -> "Nema transakcija za ovaj filter"
+                        },
+                        tekst = if (s.pretraga.isNotBlank()) "Pretraga obuhvaća naziv, kategoriju, način plaćanja i iznos u ovom ciklusu."
+                        else "Dodajte prvi prihod ili trošak u ovom ciklusu gumbom +.",
+                        akcija = if (s.pretraga.isNotBlank()) null else "Dodaj transakciju",
                         onAkcija = onDodaj,
                     )
                 }
             }
             items(s.grupe, key = { it.datum.toEpochDay() }) { g -> GrupaDanaKartica(g, onTransakcija) }
+            // Prostor ispod rezultata, da se i kratki popis može poravnati odmah ispod polja pretrage.
+            if (fokusPretrage) item { Spacer(Modifier.fillParentMaxHeight()) }
         }
         // Brzi unos (FAB 60 dp, zaobljenje 20 dp)
         Box(
@@ -137,6 +187,52 @@ fun PocetnaEkran(
             contentAlignment = Alignment.Center,
         ) {
             Icon(Ikone.ui("plus"), "Brzo dodaj transakciju", Modifier.size(28.dp), tint = Neon.NaGumbu)
+        }
+    }
+}
+
+/** Pretraga transakcija ciklusa; popis ispod se filtrira odmah dok se tipka. */
+private val VISINA_PRETRAGE = 52.dp + 12.dp
+
+@Composable
+private fun PoljePretrage(upit: String, onPretraga: (String) -> Unit, onFokus: (Boolean) -> Unit) {
+    val tipkovnica = LocalSoftwareKeyboardController.current
+    var tekst by rememberSaveable { mutableStateOf(upit) }
+    val oblik = RoundedCornerShape(24.dp)
+    var fokus by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(oblik)
+            .background(Color(0xFF161D27)) // neprozirno: popis klizi ispod zalijepljenog polja
+            .border(1.dp, if (fokus) Neon.Cijan.copy(alpha = .6f) else Neon.Rub, oblik)
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Ikone.ui("search"), null, Modifier.size(20.dp), tint = if (fokus) Neon.Cijan else Neon.TekstSiv)
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (tekst.isEmpty()) Text("Pretraži transakcije…", style = Tip.tijelo.copy(color = Neon.Neaktivno, fontWeight = FontWeight.Normal))
+            BasicTextField(
+                value = tekst,
+                onValueChange = { tekst = it; onPretraga(it) },
+                singleLine = true,
+                textStyle = Tip.tijelo,
+                cursorBrush = SolidColor(Neon.Cijan),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { tipkovnica?.hide() }),
+                modifier = Modifier.fillMaxWidth().onFocusChanged {
+                    if (it.isFocused != fokus) onFokus(it.isFocused)
+                    fokus = it.isFocused
+                },
+            )
+        }
+        if (tekst.isNotEmpty()) {
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Obriši pretragu") { tekst = ""; onPretraga("") },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Ikone.ui("close"), "Obriši pretragu", Modifier.size(18.dp), tint = Neon.TekstSiv) }
         }
     }
 }
@@ -231,7 +327,7 @@ private fun RasponCiklusaDijalog(
 }
 
 @Composable
-private fun HeroKartica(s: PocetnaStanje) {
+private fun HeroKartica(s: PocetnaStanje, onPregled: (TipTransakcije) -> Unit) {
     val neto = s.neto
     val netoBoja = if (neto >= 0) Neon.Zelena else Neon.Crvena
     Kartica(
@@ -264,8 +360,8 @@ private fun HeroKartica(s: PocetnaStanje) {
             ),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SubMetrika("Prihodi", Novac.predznak(s.zbroj.prihodi), Neon.Zelena, "arrowDownLeft", Modifier.weight(1f))
-            SubMetrika("Rashodi", Novac.predznak(-s.zbroj.troskovi), Neon.Crvena, "arrowUpRight", Modifier.weight(1f))
+            SubMetrika("Prihodi", Novac.predznak(s.zbroj.prihodi), Neon.Zelena, "arrowDownLeft", Modifier.weight(1f)) { onPregled(TipTransakcije.PRIHOD) }
+            SubMetrika("Rashodi", Novac.predznak(-s.zbroj.troskovi), Neon.Crvena, "arrowUpRight", Modifier.weight(1f)) { onPregled(TipTransakcije.TROSAK) }
         }
         if (s.prijenos < 0) {
             Row(
@@ -329,12 +425,13 @@ private fun HeroKartica(s: PocetnaStanje) {
 }
 
 @Composable
-private fun SubMetrika(naslov: String, iznos: String, boja: Color, ikona: String, modifier: Modifier) {
+private fun SubMetrika(naslov: String, iznos: String, boja: Color, ikona: String, modifier: Modifier, onClick: () -> Unit) {
     Column(
         modifier
             .clip(RoundedCornerShape(18.dp))
             .background(Neon.Ispuna)
             .border(1.dp, Neon.RubSlab, RoundedCornerShape(18.dp))
+            .clickable(onClickLabel = "Pregled: $naslov", onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -342,7 +439,8 @@ private fun SubMetrika(naslov: String, iznos: String, boja: Color, ikona: String
             Box(Modifier.size(26.dp).clip(CircleShape).background(boja.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
                 Icon(Ikone.ui(ikona), null, Modifier.size(16.dp), tint = boja)
             }
-            Text(naslov, style = Tip.oznaka)
+            Text(naslov, style = Tip.oznaka, modifier = Modifier.weight(1f))
+            Icon(Ikone.ui("chevRight"), null, Modifier.size(14.dp), tint = Neon.TekstSiv)
         }
         Text(iznos, color = boja, fontSize = 18.sp, fontWeight = FontWeight.Bold, style = Tip.iznos, maxLines = 1)
     }
@@ -381,7 +479,7 @@ private fun GrupaDanaKartica(g: GrupaDana, onTransakcija: (TransakcijaSKategorij
 }
 
 @Composable
-fun StavkaTransakcije(t: TransakcijaSKategorijom, onClick: () -> Unit) {
+fun StavkaTransakcije(t: TransakcijaSKategorijom, udio: String? = null, sDatumom: Boolean = false, onClick: () -> Unit) {
     val prihod = t.transakcija.tip == TipTransakcije.PRIHOD
     Column(
         Modifier
@@ -395,17 +493,22 @@ fun StavkaTransakcije(t: TransakcijaSKategorijom, onClick: () -> Unit) {
                 t.transakcija.opis.ifBlank { t.kategorija.naziv },
                 style = Tip.tijelo, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                Novac.predznak(if (prihod) t.transakcija.iznosCenti else -t.transakcija.iznosCenti),
-                style = Tip.iznos, color = if (prihod) Neon.Zelena else Neon.Crvena,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    Novac.predznak(if (prihod) t.transakcija.iznosCenti else -t.transakcija.iznosCenti),
+                    style = Tip.iznos, color = if (prihod) Neon.Zelena else Neon.Crvena,
+                )
+                // Udio u ukupnom (prikaz u pregledu prihoda/rashoda)
+                if (udio != null) Text(udio, style = Tip.oznaka.copy(fontSize = 11.sp))
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f)) { PillKategorije(t.kategorija) }
             if (t.transakcija.ponavljajuciId != null) {
                 Icon(Ikone.ikona("repeat"), "Ponavljajući unos", Modifier.size(14.dp), tint = Neon.LjubicastaTekst)
             }
-            Text("${t.transakcija.nacinPlacanja} · ${HrDatum.vrijeme(t.vrijeme())}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal), maxLines = 1)
+            val kada = (if (sDatumom) HrDatum.kratko(t.datum()) + " " else "") + HrDatum.vrijeme(t.vrijeme())
+            Text("${t.transakcija.nacinPlacanja} · $kada", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal), maxLines = 1)
         }
     }
 }

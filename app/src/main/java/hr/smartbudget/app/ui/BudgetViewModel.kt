@@ -16,6 +16,7 @@ import hr.smartbudget.app.domain.CycleManager
 import hr.smartbudget.app.domain.HrDatum
 import hr.smartbudget.app.domain.Novac
 import hr.smartbudget.app.domain.Ponavljanje
+import hr.smartbudget.app.domain.Pretraga
 import hr.smartbudget.app.domain.PromjenaKategorije
 import hr.smartbudget.app.domain.StatusLimita
 import hr.smartbudget.app.domain.StavkaPovijesti
@@ -67,10 +68,14 @@ data class PocetnaStanje(
     val prijenos: Long,
     val dnevniProsjek: Long,
     val filter: FilterTransakcija,
+    /** Tekst pretrage (prazno = bez pretrage). */
+    val pretraga: String = "",
     /** Raspon ovog ciklusa je ručno promijenjen. */
     val prilagoden: Boolean = false,
     val grupe: List<GrupaDana>,
     val ucitano: Boolean,
+    /** Sve transakcije ciklusa (bez filtra), za pregled prihoda/rashoda. */
+    val transakcije: List<TransakcijaSKategorijom> = emptyList(),
 ) {
     val preostaloDana get() = ciklus.brojDana - protekloDana
 
@@ -137,6 +142,8 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     private val danas = MutableStateFlow(LocalDate.now())
     private val pomak = MutableStateFlow(0)
     private val filter = MutableStateFlow(FilterTransakcija.SVE)
+    private val pretraga = MutableStateFlow("")
+    private val filterIPretraga = combine(filter, pretraga) { f, q -> f to q }
     private val brojCiklusa = MutableStateFlow(6)
 
     private val _poruke = MutableSharedFlow<String>(extraBufferCapacity = 4)
@@ -167,7 +174,7 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     /** Ukupno stanje i preneseni minus (stanje računa prije početka ciklusa, ako je negativno). */
     private val stanja = combine(ukupnoStanje, stanjePrijeCiklusa) { u, prije -> u to minOf(0L, prije) }
 
-    val pocetna: StateFlow<PocetnaStanje> = combine(ciklus, transakcijeCiklusa, stanja, filter, danas) { c, tx, (stanje, prijenos), f, d ->
+    val pocetna: StateFlow<PocetnaStanje> = combine(ciklus, transakcijeCiklusa, stanja, filterIPretraga, danas) { c, tx, (stanje, prijenos), (f, q), d ->
         val lista = tx.orEmpty()
         val z = lista.zbroj()
         val proteklo = c.proteklihDana(d)
@@ -175,7 +182,7 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
             FilterTransakcija.SVE -> lista
             FilterTransakcija.TROSKOVI -> lista.filter { it.transakcija.tip == TipTransakcije.TROSAK }
             FilterTransakcija.PRIHODI -> lista.filter { it.transakcija.tip == TipTransakcije.PRIHOD }
-        }
+        }.filter { Pretraga.odgovara(it, q) }
         val grupe = filtrirane.groupBy { it.datum() }.toSortedMap(compareByDescending { it }).map { (datum, stavke) ->
             GrupaDana(
                 datum = datum,
@@ -194,9 +201,11 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
             prijenos = prijenos,
             dnevniProsjek = if (proteklo > 0) z.troskovi / proteklo else 0,
             filter = f,
+            pretraga = q,
             prilagoden = cycleManager.value.jePrilagoden(c.sidro),
             grupe = grupe,
             ucitano = tx != null,
+            transakcije = lista,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, PocetnaStanje(ciklus.value, true, 1, Zbroj(), 0, 0, 0, FilterTransakcija.SVE, grupe = emptyList(), ucitano = false))
 
@@ -265,6 +274,7 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     fun sljedeciCiklus() { pomak.value += 1 }
     fun trenutniCiklus() { pomak.value = 0 }
     fun postaviFilter(f: FilterTransakcija) { filter.value = f }
+    fun postaviPretragu(q: String) { pretraga.value = q }
     fun postaviBrojCiklusa(n: Int) { brojCiklusa.value = n }
 
     // Upisi idu kroz repozitorij u opsegu procesa, pa završe i ako se zaslon zatvori.

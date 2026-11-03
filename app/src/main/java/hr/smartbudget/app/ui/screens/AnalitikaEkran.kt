@@ -58,6 +58,7 @@ import hr.smartbudget.app.domain.Zbroj
 import hr.smartbudget.app.ui.AnalitikaStanje
 import hr.smartbudget.app.ui.BiracCiklusa
 import hr.smartbudget.app.ui.Kartica
+import hr.smartbudget.app.ui.KruzniGraf
 import hr.smartbudget.app.ui.Oznaka
 import hr.smartbudget.app.ui.stilStatusa
 import hr.smartbudget.app.ui.theme.Neon
@@ -281,28 +282,7 @@ private fun RaspodjelaKartica(s: AnalitikaStanje) {
             Text("U ovom ciklusu nema rashoda.", style = Tip.malo)
             return@Kartica
         }
-        Box(Modifier.size(196.dp).align(Alignment.CenterHorizontally), contentAlignment = Alignment.Center) {
-            val opis = "Kružni graf rashoda: " + r.joinToString { "${it.kategorija.naziv} ${Novac.postotak(it.udio)}" }
-            Canvas(Modifier.size(196.dp).semantics { contentDescription = opis }) {
-                val debljina = 20.dp.toPx()
-                val rad = size.minDimension / 2 - debljina / 2 - 6.dp.toPx()
-                val tl = Offset(center.x - rad, center.y - rad)
-                val sz = Size(rad * 2, rad * 2)
-                drawCircle(Color(0x0DFFFFFF), rad, style = Stroke(debljina))
-                var kut = -90f
-                r.forEach { u ->
-                    val sweep = (u.udio * 3.6).toFloat()
-                    val boja = hexBoja(u.kategorija.bojaHex)
-                    drawArc(boja.copy(alpha = .25f), kut, (sweep - 1.2f).coerceAtLeast(.5f), false, tl, sz, style = Stroke(debljina + 8.dp.toPx()))
-                    drawArc(boja, kut, (sweep - 1.2f).coerceAtLeast(.5f), false, tl, sz, style = Stroke(debljina))
-                    kut += sweep
-                }
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("Ukupno rashoda", style = Tip.oznaka)
-                Text(Novac.eur(s.zbroj.troskovi), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, style = Tip.iznos, color = Neon.Tekst)
-            }
-        }
+        KruzniGraf(r, "Ukupno rashoda", s.zbroj.troskovi, Modifier.align(Alignment.CenterHorizontally))
         Column {
             val prikaz = if (r.size > 6) r.take(5) else r
             val ostalo = if (r.size > 6) r.drop(5) else emptyList()

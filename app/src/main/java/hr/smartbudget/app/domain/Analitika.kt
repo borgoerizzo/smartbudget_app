@@ -49,8 +49,12 @@ data class UdioKategorije(
 )
 
 /** Raspodjela troškova: novčani i postotni udio svake kategorije u ukupnim troškovima ciklusa. */
-fun raspodjelaTroskova(transakcije: List<TransakcijaSKategorijom>): List<UdioKategorije> {
-    val troskovi = transakcije.filter { it.transakcija.tip == TipTransakcije.TROSAK }
+fun raspodjelaTroskova(transakcije: List<TransakcijaSKategorijom>): List<UdioKategorije> =
+    raspodjelaPoKategoriji(transakcije, TipTransakcije.TROSAK)
+
+/** Novčani i postotni udio svake kategorije u ukupnim prihodima ili troškovima ([tip]). */
+fun raspodjelaPoKategoriji(transakcije: List<TransakcijaSKategorijom>, tip: TipTransakcije): List<UdioKategorije> {
+    val troskovi = transakcije.filter { it.transakcija.tip == tip }
     val ukupno = troskovi.sumOf { it.transakcija.iznosCenti }
     if (ukupno == 0L) return emptyList()
     return troskovi.groupBy { it.kategorija.id }.map { (_, lista) ->
