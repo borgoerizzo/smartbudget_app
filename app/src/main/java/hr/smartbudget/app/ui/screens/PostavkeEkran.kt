@@ -96,6 +96,8 @@ fun PostavkeEkran(vm: BudgetViewModel) {
     var doDana by remember { mutableStateOf(LocalDate.now()) }
     var iskljucene by remember { mutableStateOf(emptySet<Long>()) }
     var biramOd by remember { mutableStateOf<Boolean?>(null) }
+    var oProgramu by remember { mutableStateOf(false) }
+    if (oProgramu) OProgramuDijalog { oProgramu = false }
 
     val (rOd, rDo) = when (razdoblje) {
         Razdoblje.AKTIVNI -> vm.ciklusOdDanas(0).let { it.pocetak to it.kraj }
@@ -158,22 +160,21 @@ fun PostavkeEkran(vm: BudgetViewModel) {
                 Segmenti(FormatIzvoza.entries.map { it.naziv }, format.ordinal, { format = FormatIzvoza.entries[it] })
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OznakaPolja("Razdoblje")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Razdoblje.entries.forEach { r -> NeonChip(r.naziv, razdoblje == r, { razdoblje = r }) }
+                    // Opcije razdoblja: po dvije u retku, sve iste širine.
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Razdoblje.entries.chunked(2).forEach { par ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                par.forEach { r -> NeonChip(r.naziv, razdoblje == r, { razdoblje = r }, Modifier.weight(1f)) }
+                            }
+                        }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OznakaPolja("Od")
-                            GumbPolja("calendar", HrDatum.srednji(rOd), Modifier.fillMaxWidth()) {
-                                razdoblje = Razdoblje.PRILAGODENO; od = rOd; doDana = rDo; biramOd = true
-                            }
-                        }
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OznakaPolja("Do")
-                            GumbPolja("calendar", HrDatum.srednji(rDo), Modifier.fillMaxWidth()) {
-                                razdoblje = Razdoblje.PRILAGODENO; od = rOd; doDana = rDo; biramOd = false
-                            }
-                        }
+                    Spacer(Modifier.height(4.dp))
+                    // Početni i završni datum: isti izgled, puna širina, u jednom redu.
+                    GumbPolja("calendar", "Od   ${HrDatum.puni(rOd)}", Modifier.fillMaxWidth()) {
+                        razdoblje = Razdoblje.PRILAGODENO; od = rOd; doDana = rDo; biramOd = true
+                    }
+                    GumbPolja("calendar", "Do   ${HrDatum.puni(rDo)}", Modifier.fillMaxWidth()) {
+                        razdoblje = Razdoblje.PRILAGODENO; od = rOd; doDana = rDo; biramOd = false
                     }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -208,7 +209,11 @@ fun PostavkeEkran(vm: BudgetViewModel) {
                 }
             }
         }
+        item { UvozKartica(vm) }
         item { BackupKartica(vm) }
+        item { NaslovGrupe("Sigurnost i obavijesti") }
+        item { SigurnostKartica() }
+        item { ObavijestiKartica(vm) }
         item { NaslovGrupe("Općenito") }
         item {
             Kartica(padding = 0.dp, razmak = 0.dp) {
@@ -257,10 +262,16 @@ fun PostavkeEkran(vm: BudgetViewModel) {
             }
         }
         item {
+            // Dodir na verziju otvara "O programu".
             Text(
                 "SmartBudget · verzija ${BuildConfig.VERSION_NAME}",
                 color = Neon.Neaktivno, fontSize = 11.sp, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClickLabel = "O programu") { oProgramu = true }
+                    .padding(vertical = 8.dp),
             )
         }
     }

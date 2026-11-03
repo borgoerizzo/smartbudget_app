@@ -8,8 +8,11 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class, PrilagodbaCiklusa::class],
-    version = 3,
+    entities = [
+        Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class,
+        PrilagodbaCiklusa::class, Racun::class, CiljStednje::class,
+    ],
+    version = 4,
     exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
@@ -18,14 +21,30 @@ abstract class BudgetDatabase : RoomDatabase() {
     abstract fun postavke(): PostavkeDao
     abstract fun ponavljajuci(): PonavljajuciDao
     abstract fun prilagodbe(): PrilagodbaDao
+    abstract fun racuni(): RacunDao
+    abstract fun ciljevi(): CiljDao
 
     companion object {
+        /** Tekući račun, Kartica i Gotovina (dosadašnji načini plaćanja). */
+        internal fun pocetniRacuni(db: SupportSQLiteDatabase) {
+            listOf(
+                Triple("Tekući račun", "#4D8BFF", "bank"),
+                Triple("Kartica", "#00D8F6", "card"),
+                Triple("Gotovina", "#FFC247", "wallet"),
+            ).forEachIndexed { i, (naziv, boja, ikona) ->
+                db.execSQL(
+                    "INSERT INTO racuni (naziv, bojaHex, ikonaNaziv, pocetnoStanjeCenti, redoslijed) VALUES (?, ?, ?, 0, ?)",
+                    arrayOf<Any>(naziv, boja, ikona, i),
+                )
+            }
+        }
+
         @Volatile private var instance: BudgetDatabase? = null
 
         fun get(context: Context): BudgetDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, BudgetDatabase::class.java, "smartbudget.db")
                 .addCallback(Pocetni)
-                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3)
+                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4)
                 .build()
                 .also { instance = it }
         }
@@ -55,6 +74,33 @@ abstract class BudgetDatabase : RoomDatabase() {
         }
     }
 
+    /**
+     * v4: računi (postojeći načini plaćanja postaju računi), ciljevi štednje,
+     * prijenosi, podijeljeni troškovi i fotografije računa.
+     */
+    private object MIGRACIJA_3_4 : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `racuni` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `naziv` TEXT NOT NULL, " +
+                    "`bojaHex` TEXT NOT NULL, `ikonaNaziv` TEXT NOT NULL, `pocetnoStanjeCenti` INTEGER NOT NULL, `redoslijed` INTEGER NOT NULL)",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `ciljevi` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `naziv` TEXT NOT NULL, " +
+                    "`ciljCenti` INTEGER NOT NULL, `ustedjenoCenti` INTEGER NOT NULL, `rokEpochDan` INTEGER, `bojaHex` TEXT NOT NULL, `ikonaNaziv` TEXT NOT NULL)",
+            )
+            db.execSQL("ALTER TABLE `transakcije` ADD COLUMN `jePrijenos` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE `transakcije` ADD COLUMN `grupaId` INTEGER")
+            db.execSQL("ALTER TABLE `transakcije` ADD COLUMN `slika` TEXT")
+            pocetniRacuni(db)
+            // Načini plaćanja koji već postoje u transakcijama, a nisu među početnim računima.
+            db.execSQL(
+                "INSERT INTO racuni (naziv, bojaHex, ikonaNaziv, pocetnoStanjeCenti, redoslijed) " +
+                    "SELECT DISTINCT nacinPlacanja, '#9D4EDD', 'wallet', 0, 10 FROM transakcije " +
+                    "WHERE nacinPlacanja NOT IN (SELECT naziv FROM racuni)",
+            )
+        }
+    }
+
     /** Početne kategorije i postavke pri prvom pokretanju; korisnik ih poslije slobodno mijenja. */
     private object Pocetni : Callback() {
         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -77,6 +123,7 @@ abstract class BudgetDatabase : RoomDatabase() {
                 )
             }
             db.execSQL("INSERT INTO postavke_ciklusa (id, pocetniDanUCiklusu, nacinObradeKrajaMjeseca) VALUES (1, 1, 1)")
+            pocetniRacuni(db)
         }
     }
 }

@@ -20,14 +20,44 @@ interface TransakcijaDao {
     suspend fun dohvatiRaspon(od: Long, doIskljucivo: Long): List<TransakcijaSKategorijom>
 
     /** Kumulativno stanje: svi prihodi ikada minus svi troškovi ikada (centi). */
-    @Query("SELECT COALESCE(SUM(CASE WHEN tip = 'PRIHOD' THEN iznosCenti ELSE -iznosCenti END), 0) FROM transakcije")
+    @Query("SELECT COALESCE(SUM(CASE WHEN tip = 'PRIHOD' THEN iznosCenti ELSE -iznosCenti END), 0) + (SELECT COALESCE(SUM(pocetnoStanjeCenti), 0) FROM racuni) FROM transakcije")
     fun promatrajUkupnoStanje(): Flow<Long>
 
-    @Query("SELECT COALESCE(SUM(CASE WHEN tip = 'PRIHOD' THEN iznosCenti ELSE -iznosCenti END), 0) FROM transakcije")
+    @Query("SELECT COALESCE(SUM(CASE WHEN tip = 'PRIHOD' THEN iznosCenti ELSE -iznosCenti END), 0) + (SELECT COALESCE(SUM(pocetnoStanjeCenti), 0) FROM racuni) FROM transakcije")
     suspend fun ukupnoStanje(): Long
 
+    /** Stanja po računima (bez početnog stanja). */
+    @Query("SELECT nacinPlacanja, COALESCE(SUM(CASE WHEN tip = 'PRIHOD' THEN iznosCenti ELSE -iznosCenti END), 0) AS stanje FROM transakcije GROUP BY nacinPlacanja")
+    fun promatrajPoRacunima(): Flow<List<ZbrojRacuna>>
+
+    /** Sve transakcije (pretraga kroz sve cikluse, godišnji pregled). */
+    @Transaction
+    @Query("SELECT * FROM transakcije ORDER BY datumVrijeme DESC, id DESC")
+    fun promatrajSve(): Flow<List<TransakcijaSKategorijom>>
+
+    /** Zadnji nazivi za prijedloge pri unosu. */
+    @Transaction
+    @Query("SELECT * FROM transakcije WHERE opis != '' AND jePrijenos = 0 ORDER BY datumVrijeme DESC LIMIT 400")
+    fun promatrajZadnje(): Flow<List<TransakcijaSKategorijom>>
+
+    @Query("SELECT * FROM transakcije WHERE grupaId = :grupa")
+    suspend fun uGrupi(grupa: Long): List<Transakcija>
+
+    @Query("DELETE FROM transakcije WHERE grupaId = :grupa")
+    suspend fun obrisiGrupu(grupa: Long)
+
+    @Query("UPDATE transakcije SET nacinPlacanja = :novi WHERE nacinPlacanja = :stari")
+    suspend fun preimenujRacun(stari: String, novi: String)
+
+    @Query("SELECT COUNT(*) FROM transakcije WHERE nacinPlacanja = :naziv")
+    suspend fun brojZaRacun(naziv: String): Int
+
+    /** Postoji li već ista transakcija (uvoz izvoda: duplikati). */
+    @Query("SELECT COUNT(*) FROM transakcije WHERE datumVrijeme >= :od AND datumVrijeme < :doIskljucivo AND iznosCenti = :iznos AND tip = :tip")
+    suspend fun brojIstih(od: Long, doIskljucivo: Long, iznos: Long, tip: TipTransakcije): Int
+
     /** Stanje svih transakcija prije zadanog trenutka (početno stanje za tijek novca). */
-    @Query("SELECT COALESCE(SUM(CASE WHEN tip = 'PRIHOD' THEN iznosCenti ELSE -iznosCenti END), 0) FROM transakcije WHERE datumVrijeme < :prije")
+    @Query("SELECT COALESCE(SUM(CASE WHEN tip = 'PRIHOD' THEN iznosCenti ELSE -iznosCenti END), 0) + (SELECT COALESCE(SUM(pocetnoStanjeCenti), 0) FROM racuni) FROM transakcije WHERE datumVrijeme < :prije")
     fun promatrajStanjePrije(prije: Long): Flow<Long>
 
     @Query("SELECT COUNT(*) FROM transakcije WHERE kategorijaId = :kategorijaId")
@@ -120,6 +150,48 @@ interface PrilagodbaDao {
     suspend fun umetni(lista: List<PrilagodbaCiklusa>)
 
     @Query("DELETE FROM prilagodbe_ciklusa")
+    suspend fun obrisiSve()
+}
+
+@Dao
+interface RacunDao {
+    @Query("SELECT * FROM racuni ORDER BY redoslijed, id")
+    fun promatrajSve(): Flow<List<Racun>>
+
+    @Query("SELECT * FROM racuni ORDER BY redoslijed, id")
+    suspend fun sve(): List<Racun>
+
+    @Upsert
+    suspend fun spremi(r: Racun): Long
+
+    @Delete
+    suspend fun obrisi(r: Racun)
+
+    @Insert
+    suspend fun umetni(lista: List<Racun>)
+
+    @Query("DELETE FROM racuni")
+    suspend fun obrisiSve()
+}
+
+@Dao
+interface CiljDao {
+    @Query("SELECT * FROM ciljevi ORDER BY rokEpochDan IS NULL, rokEpochDan, id")
+    fun promatrajSve(): Flow<List<CiljStednje>>
+
+    @Query("SELECT * FROM ciljevi")
+    suspend fun sve(): List<CiljStednje>
+
+    @Upsert
+    suspend fun spremi(c: CiljStednje): Long
+
+    @Delete
+    suspend fun obrisi(c: CiljStednje)
+
+    @Insert
+    suspend fun umetni(lista: List<CiljStednje>)
+
+    @Query("DELETE FROM ciljevi")
     suspend fun obrisiSve()
 }
 

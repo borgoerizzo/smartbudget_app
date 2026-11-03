@@ -24,6 +24,9 @@ object Ikone {
         "book" to "M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z M5 17a3 3 0 0 1 3-3h11",
         "shirt" to "M8 4 3 7l2 4 2-1v10h10V10l2 1 2-4-5-3a4 4 0 0 1-8 0z",
         "brief" to "M4 8h16v11H4z M9 8V6h6v2 M4 13h16",
+        "card" to "M3 6h18v12H3z M3 10h18 M7 15h4",
+        "bank" to "M3 10l9-6 9 6 M5 10v8 M9 10v8 M15 10v8 M19 10v8 M3 20h18",
+        "target" to "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18 M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M12 12h.01",
         "wallet" to "M4 7h15v12H4z M4 7l11-3v3 M15 13h2",
         "phone" to "M8 3h8v18H8z M11 18h2",
         "paw" to "M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M16 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4 M12 20c-3 0-5-2-5-4s2-4 5-4 5 2 5 4-2 4-5 4",
@@ -42,6 +45,7 @@ object Ikone {
         "check" to "M5 12l5 5 9-12",
         "calendar" to "M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4",
         "chevDown" to "M6 9l6 6 6-6",
+        "chevUp" to "M6 15l6-6 6 6",
         "chevLeft" to "M15 6l-6 6 6 6",
         "chevRight" to "M9 6l6 6-6 6",
         "edit" to "M4 20l1-4 11-11 3 3L8 19z M14 7l3 3",
@@ -59,11 +63,25 @@ object Ikone {
         "trash" to "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13",
         "clock" to "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18 M12 7v5l3 2",
         "x" to "M6 6l12 12 M18 6 6 18",
+        "transfer" to "M4 8h15l-4-4 M20 16H5l4 4",
+        "camera" to "M4 7h4l2-3h4l2 3h4v13H4z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8",
+        "image" to "M4 4h16v16H4z M4 16l5-5 4 4 3-3 4 4 M15 9h.01",
+        "split" to "M12 3v6 M12 9l-6 6v6 M12 9l6 6v6",
+        "upload" to "M12 20V9 M7 14l5-5 5 5 M5 4h14",
+        "lock" to "M6 11h12v10H6z M8 11V7a4 4 0 0 1 8 0v4 M12 15v2",
+        "fingerprint" to "M12 11v3a8 8 0 0 1-1.5 4.5 M8.5 8.5A5 5 0 0 1 17 12v1.5a12 12 0 0 1-.8 4.3 M5 15a12 12 0 0 0 .6-3A6.5 6.5 0 0 1 12 5.5 M15.4 6.2A6.5 6.5 0 0 1 18.5 12 M9 12a3 3 0 0 1 6 0v1",
+        "backspace" to "M21 5H8l-6 7 6 7h13z M11 9l6 6 M17 9l-6 6",
+        "eyeOff" to "M3 3l18 18 M10.6 6.1A10 10 0 0 1 12 6c6 0 10 6 10 6a17 17 0 0 1-3.2 3.8 M6.6 6.6C3.8 8.3 2 12 2 12s4 6 10 6c1.6 0 3-.4 4.3-1 M9.9 9.9a3 3 0 0 0 4.2 4.2",
+        "bell" to "M6 16V11a6 6 0 0 1 12 0v5l2 2H4z M10 21h4",
+        "info" to "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18 M12 11v6 M12 7.5h.01",
         "search" to "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14 M16.5 16.5 21 21",
         "restore" to "M4 12a8 8 0 1 0 2.3-5.7 M4 4v4h4 M12 8v4l3 2",
     )
 
-    fun ui(naziv: String): ImageVector = cache.getOrPut("ui:$naziv") { izPutanje(naziv, ui.getValue(naziv)) }
+    /** Ikona sučelja; ako je nema, traži se među ikonama kategorija (nikad ne ruši aplikaciju). */
+    fun ui(naziv: String): ImageVector = cache.getOrPut("ui:$naziv") {
+        izPutanje(naziv, ui[naziv] ?: putanje[naziv] ?: putanje.getValue("star"))
+    }
 
     private fun izPutanje(ime: String, d: String): ImageVector =
         ImageVector.Builder(ime, 24.dp, 24.dp, 24f, 24f).addPath(

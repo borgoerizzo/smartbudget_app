@@ -51,14 +51,21 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import hr.smartbudget.app.domain.GodisnjiPregled
 import hr.smartbudget.app.domain.HrDatum
 import hr.smartbudget.app.domain.Novac
+import hr.smartbudget.app.domain.Os
 import hr.smartbudget.app.domain.StatusLimita
 import hr.smartbudget.app.domain.Zbroj
 import hr.smartbudget.app.ui.AnalitikaStanje
 import hr.smartbudget.app.ui.BiracCiklusa
 import hr.smartbudget.app.ui.Kartica
 import hr.smartbudget.app.ui.KruzniGraf
+import hr.smartbudget.app.ui.Ikone
+import hr.smartbudget.app.ui.PopisStavkiKategorije
+import hr.smartbudget.app.data.TipTransakcije
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Icon
 import hr.smartbudget.app.ui.Oznaka
 import hr.smartbudget.app.ui.stilStatusa
 import hr.smartbudget.app.ui.theme.Neon
@@ -74,6 +81,8 @@ fun AnalitikaEkran(
     onSljedeci: () -> Unit,
     onTrenutni: () -> Unit,
     onBrojCiklusa: (Int) -> Unit,
+    godisnji: GodisnjiPregled?,
+    onGodina: (Int) -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
@@ -91,6 +100,7 @@ fun AnalitikaEkran(
         item { RaspodjelaKartica(s) }
         item { UsporedbaKartica(s) }
         item { PovijestKartica(s, onBrojCiklusa) }
+        if (godisnji != null) item { GodisnjiKartica(godisnji, onGodina) }
     }
 }
 
@@ -153,12 +163,10 @@ private fun GrafTijeka(s: AnalitikaStanje, odabrani: Int, onOdabir: (Int) -> Uni
     val projRashodi = zadnja.troskovi + tempo * (n - tocke.size)
     val vrijednosti = tocke.flatMap { listOf(it.prihodi, it.troskovi, it.neto, it.stanje) }.map { it.toDouble() } +
         (if (s.jeAktivni) listOf(projRashodi) else emptyList()) + 0.0
-    var maxV = vrijednosti.max()
-    var minV = vrijednosti.min()
-    if (maxV - minV < 100) maxV = minV + 100
-    val raspon = maxV - minV
-    maxV += raspon * .06
-    if (minV < 0) minV -= raspon * .06
+    // Dinamična os: minus dobiva vidljiv dio visine bez obzira na veličinu prihoda.
+    val os = Os.izracunaj(vrijednosti.min(), vrijednosti.max())
+    val minV = os.min
+    val maxV = os.max
     val opis = "Linijski graf kumulativnih prihoda, rashoda, neto toka i stanja računa za ciklus ${HrDatum.raspon(s.ciklus)}"
     val labelPaint = remember {
         android.graphics.Paint().apply { isAntiAlias = true; color = Neon.TekstSiv.toArgb() }
@@ -188,9 +196,10 @@ private fun GrafTijeka(s: AnalitikaStanje, odabrani: Int, onOdabir: (Int) -> Uni
         fun y(v: Double) = (dolje - (v - minV) / (maxV - minV) * (dolje - gore)).toFloat()
         labelPaint.textSize = 11.sp.toPx()
 
-        // Mreža i oznake osi Y
-        for (k in 0..3) {
-            val v = minV + (maxV - minV) * k / 3
+        // Područje ispod nule blago crveno
+        if (minV < 0) drawRect(Neon.Crvena.copy(alpha = .06f), Offset(lijevo, y(0.0)), androidx.compose.ui.geometry.Size(w, y(minV) - y(0.0)))
+        // Mreža i oznake osi Y (0 se crta posebno, crveno)
+        for (v in os.oznake.filter { it != 0.0 }) {
             val yy = y(v)
             drawLine(Color(0x12FFFFFF), Offset(lijevo, yy), Offset(size.width, yy), 1f)
             drawIntoCanvas {
@@ -198,7 +207,17 @@ private fun GrafTijeka(s: AnalitikaStanje, odabrani: Int, onOdabir: (Int) -> Uni
                 it.nativeCanvas.drawText(Novac.cijeli((v / 100).roundToInt().toLong()), lijevo - 6.dp.toPx(), yy + 4.dp.toPx(), labelPaint)
             }
         }
-        if (minV < 0) drawLine(Color(0x33FFFFFF), Offset(lijevo, y(0.0)), Offset(size.width, y(0.0)), 1f)
+        // Nula: crvena isprekidana linija, da se jasno vidi kad stanje prijeđe u minus.
+        drawLine(
+            Neon.Crvena.copy(alpha = .75f), Offset(lijevo, y(0.0)), Offset(size.width, y(0.0)), 1.4.dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
+        )
+        drawIntoCanvas {
+            labelPaint.textAlign = android.graphics.Paint.Align.RIGHT
+            labelPaint.color = Neon.Crvena.toArgb()
+            it.nativeCanvas.drawText("0 €", size.width, y(0.0) - 4.dp.toPx(), labelPaint)
+            labelPaint.color = Neon.TekstSiv.toArgb()
+        }
         // Oznake osi X: početak, sredina, kraj
         drawIntoCanvas {
             val c = it.nativeCanvas
@@ -283,34 +302,55 @@ private fun RaspodjelaKartica(s: AnalitikaStanje) {
             return@Kartica
         }
         KruzniGraf(r, "Ukupno rashoda", s.zbroj.troskovi, Modifier.align(Alignment.CenterHorizontally))
+        // Dodir na kategoriju širi popis njezinih stavki.
+        var rasirene by remember(s.ciklus) { mutableStateOf(setOf<Long>()) }
+        fun prebaci(id: Long) { rasirene = if (id in rasirene) rasirene - id else rasirene + id }
+        fun stavke(ids: Set<Long>) = s.transakcije.filter { it.kategorija.id in ids && it.transakcija.tip == TipTransakcije.TROSAK }
         Column {
             val prikaz = if (r.size > 6) r.take(5) else r
             val ostalo = if (r.size > 6) r.drop(5) else emptyList()
             prikaz.forEachIndexed { i, u ->
                 if (i > 0) HorizontalDivider(color = Color(0x12FFFFFF))
-                RedakLegende(u.kategorija.naziv, hexBoja(u.kategorija.bojaHex), u.centi, u.udio, u.iskoristenost, u.status)
+                val id = u.kategorija.id
+                Box(Modifier.clickable(onClickLabel = "Prikaži stavke") { prebaci(id) }) {
+                    RedakLegende(u.kategorija.naziv, hexBoja(u.kategorija.bojaHex), u.centi, u.udio, u.iskoristenost, u.status, rasireno = id in rasirene)
+                }
+                if (id in rasirene) PopisStavkiKategorije(stavke(setOf(id)))
             }
             if (ostalo.isNotEmpty()) {
                 HorizontalDivider(color = Color(0x12FFFFFF))
                 val c = ostalo.sumOf { it.centi }
                 val maxIsk = ostalo.mapNotNull { it.iskoristenost }.maxOrNull()
-                RedakLegende(
-                    "Ostalo (${ostalo.size} kategorije)", Neon.TekstSiv, c, ostalo.sumOf { it.udio }, maxIsk,
-                    ostalo.maxOfOrNull { it.status } ?: StatusLimita.BEZ_LIMITA, najvise = true,
-                )
+                Box(Modifier.clickable(onClickLabel = "Prikaži stavke") { prebaci(-1L) }) {
+                    RedakLegende(
+                        "Ostalo (${ostalo.size} kategorije)", Neon.TekstSiv, c, ostalo.sumOf { it.udio }, maxIsk,
+                        ostalo.maxOfOrNull { it.status } ?: StatusLimita.BEZ_LIMITA, najvise = true, rasireno = -1L in rasirene,
+                    )
+                }
+                if (-1L in rasirene) PopisStavkiKategorije(stavke(ostalo.map { it.kategorija.id }.toSet()))
             }
         }
     }
 }
 
 @Composable
-private fun RedakLegende(naziv: String, boja: Color, centi: Long, udio: Double, iskoristenost: Double?, status: StatusLimita, najvise: Boolean = false) {
+private fun RedakLegende(
+    naziv: String,
+    boja: Color,
+    centi: Long,
+    udio: Double,
+    iskoristenost: Double?,
+    status: StatusLimita,
+    najvise: Boolean = false,
+    rasireno: Boolean = false,
+) {
     val st = stilStatusa(status)
     Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(boja))
             Text(naziv, style = Tip.tijelo.copy(fontSize = 14.sp), modifier = Modifier.weight(1f).padding(start = 10.dp))
             Text(Novac.eur(centi), style = Tip.iznos.copy(fontSize = 14.sp), color = Neon.Tekst)
+            Icon(Ikone.ui(if (rasireno) "chevUp" else "chevDown"), null, Modifier.padding(start = 6.dp).size(16.dp), tint = Neon.TekstSiv)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("${Novac.postotak(udio)} rashoda", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal), modifier = Modifier.weight(1f))
@@ -445,11 +485,22 @@ private fun PovijestKartica(s: AnalitikaStanje, onBrojCiklusa: (Int) -> Unit) {
                 }
             }
         }
-        val prosjek = Zbroj(p.sumOf { it.zbroj.prihodi } / p.size.coerceAtLeast(1), p.sumOf { it.zbroj.troskovi } / p.size.coerceAtLeast(1))
+        // Prosjek samo iz ciklusa koji imaju unose: prazni (prije početka korištenja) bi ga lažno smanjili.
+        val sUnosima = p.filter { it.zbroj.prihodi > 0 || it.zbroj.troskovi > 0 }
+        val n = sUnosima.size.coerceAtLeast(1)
+        val prosjek = Zbroj(sUnosima.sumOf { it.zbroj.prihodi } / n, sUnosima.sumOf { it.zbroj.troskovi } / n)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Legenda("Prosj. prihodi", Neon.Zelena, Novac.eur(prosjek.prihodi), Modifier.weight(1f))
             Legenda("Prosj. rashodi", Neon.Crvena, Novac.eur(prosjek.troskovi), Modifier.weight(1f))
             Legenda("Prosj. neto", bojaNeto, Novac.stanje(prosjek.razlika), Modifier.weight(1f), Neon.LjubicastaTekst)
         }
+        Text(
+            when (sUnosima.size) {
+                0 -> "Još nema unosa u ovom razdoblju."
+                1 -> "Prosjek iz 1 ciklusa s unosima."
+                else -> "Prosjek iz ${sUnosima.size} ciklusa s unosima (od ${p.size} prikazanih)."
+            },
+            style = Tip.oznaka.copy(fontWeight = FontWeight.Normal),
+        )
     }
 }

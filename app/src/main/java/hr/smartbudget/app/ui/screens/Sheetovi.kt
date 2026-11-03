@@ -71,6 +71,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import hr.smartbudget.app.data.Kategorija
 import hr.smartbudget.app.data.NacinPlacanja
+import hr.smartbudget.app.data.Fotografije
+import hr.smartbudget.app.data.TransakcijaSKategorijom
+import hr.smartbudget.app.domain.Pretraga
+import hr.smartbudget.app.domain.prijedloziZaNaziv
+import hr.smartbudget.app.ui.TonalniGumb
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import hr.smartbudget.app.data.PonavljajuciUnos
 import hr.smartbudget.app.data.TipTransakcije
 import hr.smartbudget.app.data.Transakcija
@@ -270,7 +288,14 @@ fun TransakcijaSheet(
     /** Novo pravilo ponavljanja (otvoreno iz popisa ponavljajućih unosa). */
     novoPravilo: Boolean = false,
     onObrisiPonavljajuci: (PonavljajuciUnos) -> Unit = {},
+    /** Nazivi računa za odabir (umjesto fiksnih načina plaćanja). */
+    racuni: List<String> = NacinPlacanja.svi,
+    /** Spremanje troška podijeljenog na više kategorija; null skriva opciju. */
+    onSpremiPodijeljeno: ((List<Transakcija>) -> Unit)? = null,
+    /** Prethodni unosi za prijedloge naziva, kategorije i iznosa. */
+    zadnjiUnosi: List<TransakcijaSKategorijom> = emptyList(),
 ) {
+    val ctx = LocalContext.current
     val zona = ZoneId.systemDefault()
     val radSPravilom = pravilo != null || novoPravilo
     var tip by remember { mutableStateOf(pravilo?.tip ?: postojeca?.tip ?: pocetniTip) }
@@ -279,7 +304,22 @@ fun TransakcijaSheet(
     var iznos by remember { mutableStateOf((pravilo?.iznosCenti ?: postojeca?.iznosCenti)?.let { Novac.broj(it) } ?: "") }
     var kategorijaId by remember { mutableStateOf(pravilo?.kategorijaId ?: postojeca?.kategorijaId) }
     var opis by remember { mutableStateOf(pravilo?.opis ?: postojeca?.opis ?: "") }
-    var nacin by remember { mutableStateOf(pravilo?.nacinPlacanja ?: postojeca?.nacinPlacanja ?: NacinPlacanja.KARTICA) }
+    var nacin by remember {
+        mutableStateOf(pravilo?.nacinPlacanja ?: postojeca?.nacinPlacanja ?: racuni.firstOrNull { it == NacinPlacanja.KARTICA } ?: racuni.firstOrNull() ?: NacinPlacanja.KARTICA)
+    }
+    var slika by remember { mutableStateOf(postojeca?.slika) }
+    var dijeli by remember { mutableStateOf(false) }
+    // Dijelovi podijeljenog troška: (kategorija, iznos u obliku za unos)
+    val dijelovi = remember { mutableStateListOf<Pair<Long?, String>>(null to "", null to "") }
+    var prijedlogOdabran by remember { mutableStateOf(postojeca != null || pravilo != null) }
+    var punaSlika by remember { mutableStateOf(false) }
+    var kameraDatoteka by remember { mutableStateOf<java.io.File?>(null) }
+    val kamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        kameraDatoteka?.let { f -> if (ok) Fotografije.spremi(ctx, android.net.Uri.fromFile(f))?.let { slika = it }; f.delete() }
+    }
+    val galerija = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) Fotografije.spremi(ctx, uri)?.let { slika = it }
+    }
     var trenutak by remember {
         mutableStateOf(
             when {
@@ -338,7 +378,7 @@ fun TransakcijaSheet(
             )
             greska?.let { Text(it, color = Neon.Crvena, fontSize = 12.sp) }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!dijeli) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OznakaPolja("Kategorija")
             if (ponudjene.isEmpty()) {
                 Text("Nema kategorija ovog tipa. Dodajte ih u Budžetima.", style = Tip.malo)
@@ -350,14 +390,126 @@ fun TransakcijaSheet(
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OznakaPolja("Naziv / napomena")
             NeonPolje(
-                opis, { opis = it }, Modifier.fillMaxWidth(),
+                opis, { opis = it; prijedlogOdabran = false }, Modifier.fillMaxWidth(),
                 placeholder = if (tip == TipTransakcije.PRIHOD) "npr. Plaća za listopad" else "npr. Tjedna nabava",
             )
+            // Prijedlozi iz prethodnih unosa: naziv, kategorija, račun i iznos jednim dodirom.
+            val prijedlozi = if (prijedlogOdabran) emptyList() else prijedloziZaNaziv(zadnjiUnosi, opis, tip)
+            if (prijedlozi.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    prijedlozi.forEach { pr ->
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(hexBoja(pr.kategorija.bojaHex).copy(alpha = .14f))
+                                .clickable(onClickLabel = "Koristi prijedlog") {
+                                    opis = pr.transakcija.opis
+                                    kategorijaId = pr.kategorija.id
+                                    if (pr.transakcija.nacinPlacanja in racuni) nacin = pr.transakcija.nacinPlacanja
+                                    if (iznos.isBlank()) iznos = Novac.broj(pr.transakcija.iznosCenti)
+                                    prijedlogOdabran = true
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Ikone.ikona(pr.kategorija.ikonaNaziv), null, Modifier.size(14.dp), tint = hexBoja(pr.kategorija.bojaHex).svjetlija())
+                            Text(
+                                " ${pr.transakcija.opis} · ${Novac.eur(pr.transakcija.iznosCenti)}",
+                                color = Neon.TekstSvijetliSiv, fontSize = 12.sp, maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        // Naziv koji točno odgovara prethodnom unosu sam odabire kategoriju.
+        LaunchedEffect(opis, tip) {
+            if (kategorijaId == null && opis.isNotBlank()) {
+                val n = Pretraga.normaliziraj(opis)
+                zadnjiUnosi.firstOrNull { it.transakcija.tip == tip && Pretraga.normaliziraj(it.transakcija.opis) == n }
+                    ?.let { kategorijaId = it.kategorija.id }
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OznakaPolja("Način plaćanja")
+            OznakaPolja("Račun")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                NacinPlacanja.svi.forEach { n -> NeonChip(n, nacin == n, { nacin = n }, boja = Neon.Cijan) }
+                (racuni + nacin).distinct().forEach { n -> NeonChip(n, nacin == n, { nacin = n }, boja = Neon.Cijan) }
+            }
+        }
+        // Podjela na više kategorija (samo nova transakcija, ne pravilo)
+        if (onSpremiPodijeljeno != null && postojeca == null && !radSPravilom && !ponavljaj) {
+            RedakPrekidaca(
+                naslov = "Podijeli na više kategorija",
+                opis = "Npr. račun iz trgovine: dio namirnice, dio kućanstvo",
+                ukljuceno = dijeli,
+                ikona = "split",
+            ) { dijeli = it }
+            if (dijeli) {
+                val ukupno = Novac.parsiraj(iznos) ?: 0L
+                val rasporedeno = dijelovi.sumOf { Novac.parsiraj(it.second) ?: 0L }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    dijelovi.forEachIndexed { i, (katId, iz) ->
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            var otvoren by remember { mutableStateOf(false) }
+                            val k = ponudjene.firstOrNull { it.id == katId }
+                            Box(Modifier.weight(1f)) {
+                                GumbPolja(if (k != null) "check" else "chevDown", k?.naziv ?: "Kategorija", Modifier.fillMaxWidth()) { otvoren = true }
+                                DropdownMenu(otvoren, { otvoren = false }, containerColor = Neon.Sheet) {
+                                    ponudjene.forEach { kk ->
+                                        DropdownMenuItem(
+                                            text = { Text(kk.naziv, color = Neon.Tekst) },
+                                            leadingIcon = { Icon(Ikone.ikona(kk.ikonaNaziv), null, Modifier.size(18.dp), tint = hexBoja(kk.bojaHex)) },
+                                            onClick = { dijelovi[i] = kk.id to iz; otvoren = false },
+                                        )
+                                    }
+                                }
+                            }
+                            NeonPolje(iz, { dijelovi[i] = katId to it; greska = null }, Modifier.width(120.dp), placeholder = "0,00", uCentima = true, visina = 52.dp)
+                            if (dijelovi.size > 2) KruzniGumb("close", "Ukloni dio", { dijelovi.removeAt(i) })
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Raspoređeno ${Novac.eur(rasporedeno)} od ${Novac.eur(ukupno)}" +
+                                if (ukupno - rasporedeno != 0L) " · ostalo ${Novac.stanje(ukupno - rasporedeno)}" else " ✓",
+                            style = Tip.oznaka.copy(fontWeight = FontWeight.Normal),
+                            color = if (ukupno == rasporedeno && ukupno > 0) Neon.Zelena else Neon.TekstSiv,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TonalniGumb("Dio", { dijelovi.add(null to "") }, ikona = "plus", boja = Neon.Cijan)
+                    }
+                }
+            }
+        }
+        // Fotografija računa
+        if (!radSPravilom) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OznakaPolja("Fotografija računa")
+                val trenutna = slika
+                if (trenutna != null) {
+                    val bmp = remember(trenutna) { Fotografije.ucitaj(trenutna, 400)?.asImageBitmap() }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (bmp != null) {
+                            Image(
+                                bmp, "Fotografija računa",
+                                Modifier.size(84.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "Povećaj") { punaSlika = true },
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                        TonalniGumb("Ukloni", { slika = null }, ikona = "trash", boja = Neon.Crvena)
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TonalniGumb("Kamera", {
+                            val (uri, f) = Fotografije.zaKameru(ctx)
+                            kameraDatoteka = f
+                            kamera.launch(uri)
+                        }, Modifier.weight(1f), ikona = "camera", boja = Neon.Cijan)
+                        TonalniGumb("Galerija", {
+                            galerija.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }, Modifier.weight(1f), ikona = "image", boja = Neon.Cijan)
+                    }
+                }
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -392,6 +544,26 @@ fun TransakcijaSheet(
             val centi = Novac.parsiraj(iznos)
             when {
                 centi == null || centi <= 0 -> greska = "Unesite iznos veći od 0,00 €."
+                dijeli && onSpremiPodijeljeno != null -> {
+                    val iznosi = dijelovi.map { Novac.parsiraj(it.second) ?: 0L }
+                    when {
+                        dijelovi.any { it.first == null } -> greska = "Odaberite kategoriju za svaki dio."
+                        iznosi.any { it <= 0 } -> greska = "Svaki dio mora imati iznos."
+                        iznosi.sum() != centi -> greska = "Zbroj dijelova (${Novac.eur(iznosi.sum())}) mora biti jednak iznosu."
+                        else -> {
+                            val kada = trenutak.atZone(zona).toInstant().toEpochMilli()
+                            onSpremiPodijeljeno(
+                                dijelovi.mapIndexed { i, (katId, _) ->
+                                    Transakcija(
+                                        tip = tip, iznosCenti = iznosi[i], datumVrijeme = kada, kategorijaId = katId!!,
+                                        opis = opis.trim(), nacinPlacanja = nacin, slika = if (i == 0) slika else null,
+                                    )
+                                },
+                            )
+                            onZatvori()
+                        }
+                    }
+                }
                 kategorijaId == null -> greska = "Odaberite kategoriju."
                 ponavljaj && onSpremiPonavljajuci != null -> {
                     val d = trenutak.toLocalDate()
@@ -424,6 +596,8 @@ fun TransakcijaSheet(
                             opis = opis.trim(),
                             nacinPlacanja = nacin,
                             ponavljajuciId = postojeca?.ponavljajuciId,
+                            grupaId = postojeca?.grupaId,
+                            slika = slika,
                         ),
                     )
                     onZatvori()
@@ -438,6 +612,16 @@ fun TransakcijaSheet(
         }
     }
 
+    if (punaSlika) {
+        slika?.let { put ->
+            val bmp = remember(put) { Fotografije.ucitaj(put, 1600)?.asImageBitmap() }
+            Dialog(onDismissRequest = { punaSlika = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                Box(Modifier.fillMaxSize().background(Color.Black).clickable { punaSlika = false }, contentAlignment = Alignment.Center) {
+                    if (bmp != null) Image(bmp, "Fotografija računa", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                }
+            }
+        }
+    }
     if (biramDatum) {
         val st = rememberDatePickerState(initialSelectedDateMillis = trenutak.toLocalDate().atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
         DatePickerDialog(
@@ -499,7 +683,7 @@ fun TransakcijaSheet(
 }
 
 @Composable
-fun RedakPrekidaca(naslov: String, opis: String, ukljuceno: Boolean, omoguceno: Boolean = true, onPromjena: (Boolean) -> Unit) {
+fun RedakPrekidaca(naslov: String, opis: String, ukljuceno: Boolean, omoguceno: Boolean = true, ikona: String = "repeat", onPromjena: (Boolean) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -510,7 +694,7 @@ fun RedakPrekidaca(naslov: String, opis: String, ukljuceno: Boolean, omoguceno: 
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Ikone.ikona("repeat"), null, Modifier.size(20.dp), tint = if (ukljuceno) Neon.LjubicastaTekst else Neon.TekstSiv)
+        Icon(Ikone.ui(ikona), null, Modifier.size(20.dp), tint = if (ukljuceno) Neon.LjubicastaTekst else Neon.TekstSiv)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(naslov, style = Tip.tijelo.copy(fontSize = 14.sp))
             Text(opis, style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
@@ -570,7 +754,7 @@ fun GumbPolja(ikona: String, tekst: String, modifier: Modifier = Modifier, onCli
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Icon(Ikone.ui(ikona), null, Modifier.size(18.dp), tint = Neon.Cijan)
-        Text(tekst, style = Tip.tijelo)
+        Text(tekst, style = Tip.tijelo, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
     }
 }
 

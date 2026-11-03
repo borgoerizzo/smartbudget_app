@@ -10,6 +10,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import hr.smartbudget.app.data.BudgetRepository
 import hr.smartbudget.app.data.TipTransakcije
+import hr.smartbudget.app.ui.EkranZakljucavanja
+import hr.smartbudget.app.ui.Zakljucavanje
 import hr.smartbudget.app.ui.screens.TransakcijaSheet
 import hr.smartbudget.app.ui.theme.SmartBudgetTheme
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +33,11 @@ class BrziUnosActivity : ComponentActivity() {
 
         setContent {
             SmartBudgetTheme {
-                val kategorije by repo.db.kategorije().promatrajSve().collectAsState(initial = emptyList())
+                if (Zakljucavanje.zakljucano.value) { EkranZakljucavanja(); return@SmartBudgetTheme }
+                val kategorijeSve by repo.db.kategorije().promatrajSve().collectAsState(initial = emptyList())
+                val kategorije = kategorijeSve.filter { it.ikonaNaziv != BudgetRepository.KATEGORIJA_PRIJENOSA }
+                val racuni by repo.db.racuni().promatrajSve().collectAsState(initial = emptyList())
+                val zadnji by repo.db.transakcije().promatrajZadnje().collectAsState(initial = emptyList())
                 TransakcijaSheet(
                     postojeca = null,
                     kategorije = kategorije,
@@ -47,6 +53,14 @@ class BrziUnosActivity : ComponentActivity() {
                     },
                     onObrisi = {},
                     onZatvori = { finish() },
+                    racuni = racuni.map { it.naziv },
+                    zadnjiUnosi = zadnji,
+                    onSpremiPodijeljeno = { dijelovi ->
+                        repo.opseg.launch {
+                            val poruke = repo.spremiPodijeljeno(dijelovi)
+                            withContext(Dispatchers.Main) { Toast.makeText(app, poruke.joinToString("\n"), Toast.LENGTH_LONG).show() }
+                        }
+                    },
                     onSpremiPonavljajuci = { p ->
                         repo.opseg.launch {
                             val novih = repo.spremiPonavljajuci(p)
@@ -62,6 +76,16 @@ class BrziUnosActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Zakljucavanje.naPokretanju(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Zakljucavanje.uPozadinu()
     }
 
     companion object {

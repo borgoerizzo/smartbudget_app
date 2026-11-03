@@ -8,4 +8,6 @@
     <string name="widget_dodaj_prihod">+ Prihod</string>
     <string name="widget_dodaj_trosak">− Trošak</string>
     <string name="brzi_unos">Brzi unos</string>
+    <string name="widget_mali_opis">Samo stanje računa (mali widget)</string>
+    <string name="widget_mali_naziv">SmartBudget stanje</string>
 </resources>

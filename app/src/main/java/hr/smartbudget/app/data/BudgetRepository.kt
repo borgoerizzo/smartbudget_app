@@ -6,6 +6,10 @@ import hr.smartbudget.app.domain.CycleManager
 import hr.smartbudget.app.domain.Novac
 import hr.smartbudget.app.domain.PRAG_UPOZORENJA
 import hr.smartbudget.app.domain.Ponavljanje
+import hr.smartbudget.app.domain.prognoza
+import hr.smartbudget.app.domain.TjedniSazetak
+import hr.smartbudget.app.domain.tjedniSazetak
+import hr.smartbudget.app.domain.prognozaPrekoracenja
 import hr.smartbudget.app.domain.Zbroj
 import hr.smartbudget.app.domain.zbroj
 import hr.smartbudget.app.widget.StanjeWidget
@@ -93,10 +97,94 @@ class BudgetRepository private constructor(private val context: Context) {
         return poruke
     }
 
+    /** Brisanje; dio prijenosa briše i drugi dio (inače bi stanja računa bila kriva). */
     suspend fun obrisiTransakciju(t: Transakcija) {
-        tDao.obrisi(t)
+        if (t.jePrijenos && t.grupaId != null) tDao.obrisiGrupu(t.grupaId) else tDao.obrisi(t)
+        t.slika?.let { runCatching { java.io.File(it).delete() } }
         promjena()
     }
+
+    // --- Računi i prijenosi ---
+
+    /** Skrivena sustavna kategorija za prijenose (ne prikazuje se u popisima kategorija). */
+    suspend fun kategorijaPrijenosa(): Long =
+        kDao.sve().firstOrNull { it.ikonaNaziv == KATEGORIJA_PRIJENOSA }?.id
+            ?: kDao.spremi(Kategorija(naziv = "Prijenos", bojaHex = "#9AA7B8", ikonaNaziv = KATEGORIJA_PRIJENOSA, tip = TipTransakcije.TROSAK))
+
+    /** Prijenos s računa [s] na račun [na]: dva povezana unosa koji se ne broje u prihode/troškove. */
+    suspend fun prijenos(s: String, na: String, iznosCenti: Long, kada: Long, opis: String) {
+        val kat = kategorijaPrijenosa()
+        val grupa = System.currentTimeMillis()
+        val naziv = opis.ifBlank { "Prijenos $s → $na" }
+        db.withTransaction {
+            tDao.spremi(Transakcija(tip = TipTransakcije.TROSAK, iznosCenti = iznosCenti, datumVrijeme = kada, kategorijaId = kat, opis = naziv, nacinPlacanja = s, jePrijenos = true, grupaId = grupa))
+            tDao.spremi(Transakcija(tip = TipTransakcije.PRIHOD, iznosCenti = iznosCenti, datumVrijeme = kada, kategorijaId = kat, opis = naziv, nacinPlacanja = na, jePrijenos = true, grupaId = grupa))
+        }
+        promjena()
+    }
+
+    /** Sprema račun; kod promjene naziva preimenuje ga i u svim njegovim transakcijama. */
+    suspend fun spremiRacun(r: Racun, stariNaziv: String?) {
+        db.withTransaction {
+            if (stariNaziv != null && stariNaziv != r.naziv) tDao.preimenujRacun(stariNaziv, r.naziv)
+            db.racuni().spremi(r)
+        }
+        promjena()
+    }
+
+    /** Vraća poruku o grešci ako račun ima transakcija, inače null. */
+    suspend fun obrisiRacun(r: Racun): String? {
+        val n = tDao.brojZaRacun(r.naziv)
+        if (n > 0) return "Račun \"${r.naziv}\" ima $n transakcija i ne može se obrisati."
+        db.racuni().obrisi(r)
+        promjena()
+        return null
+    }
+
+    /** Podijeljeni trošak: više transakcija (po kategoriji) s istim nazivom, datumom i računom. */
+    suspend fun spremiPodijeljeno(dijelovi: List<Transakcija>): List<String> {
+        val grupa = System.currentTimeMillis()
+        db.withTransaction { dijelovi.forEach { tDao.spremi(it.copy(grupaId = grupa)) } }
+        promjena()
+        return listOf("Spremljeno: ${dijelovi.size} dijela, ukupno ${Novac.eur(dijelovi.sumOf { it.iznosCenti })}")
+    }
+
+    // --- Uvoz izvoda ---
+
+    /** Jedan redak izvoda: iznos s predznakom (minus = trošak). */
+    data class UvozRed(val datum: LocalDate, val centi: Long, val opis: String)
+
+    /** Uvozi retke; isti dan + iznos + tip koji već postoji smatra se duplikatom. Vraća (uvezeno, duplikata). */
+    suspend fun uvezi(redovi: List<UvozRed>, racun: String, kategorijaTrosak: Long, kategorijaPrihod: Long): Pair<Int, Int> {
+        val zona = ZoneId.systemDefault()
+        var uvezeno = 0
+        var duplikati = 0
+        db.withTransaction {
+            redovi.forEach { r ->
+                val tip = if (r.centi < 0) TipTransakcije.TROSAK else TipTransakcije.PRIHOD
+                val iznos = kotlin.math.abs(r.centi)
+                val od = r.datum.atStartOfDay(zona).toInstant().toEpochMilli()
+                val doD = r.datum.plusDays(1).atStartOfDay(zona).toInstant().toEpochMilli()
+                if (iznos == 0L) return@forEach
+                if (tDao.brojIstih(od, doD, iznos, tip) > 0) { duplikati++; return@forEach }
+                tDao.spremi(
+                    Transakcija(
+                        tip = tip, iznosCenti = iznos, datumVrijeme = od + 12 * 3_600_000L,
+                        kategorijaId = if (tip == TipTransakcije.TROSAK) kategorijaTrosak else kategorijaPrihod,
+                        opis = r.opis.take(120), nacinPlacanja = racun,
+                    ),
+                )
+                uvezeno++
+            }
+        }
+        if (uvezeno > 0) promjena()
+        return uvezeno to duplikati
+    }
+
+    // --- Ciljevi štednje ---
+
+    suspend fun spremiCilj(c: CiljStednje) = db.ciljevi().spremi(c)
+    suspend fun obrisiCilj(c: CiljStednje) = db.ciljevi().obrisi(c)
 
     suspend fun spremiKategoriju(k: Kategorija) {
         kDao.spremi(k)
@@ -122,7 +210,8 @@ class BudgetRepository private constructor(private val context: Context) {
     /** Sprema ponavljajući unos i odmah stvara unose koji su već dospjeli (npr. ako je prvi datum danas). */
     suspend fun spremiPonavljajuci(p: PonavljajuciUnos): Int {
         rDao.spremi(p)
-        val novih = generirajPonavljajuce()
+        // Korisnik upravo unosi pravilo u aplikaciji: bez obavijesti o "naplati".
+        val novih = generirajPonavljajuce(obavijesti = false)
         if (novih == 0) promjena()
         return novih
     }
@@ -133,8 +222,47 @@ class BudgetRepository private constructor(private val context: Context) {
     }
 
     /** Nakon svake promjene podataka: osvježi widget i (ako je uključeno) zakaži sigurnosnu kopiju. */
+    /** Prognoza limita za aktivni ciklus: obavijest kad tempo vodi preko limita (jednom po kategoriji u ciklusu). */
+    suspend fun provjeriPrognoze() {
+        val postavke = AppPostavke.get(context)
+        if (!postavke.stanje.value.obavijestPrognoza) return
+        val danas = LocalDate.now()
+        val c = cycleManager().ciklusZa(danas)
+        val proteklo = c.proteklihDana(danas)
+        val tx = tDao.dohvatiRaspon(c.odMillis(), c.doMillisIskljucivo()).filter { !it.transakcija.jePrijenos && it.transakcija.tip == TipTransakcije.TROSAK }
+        val poKat = tx.groupBy { it.kategorija }.mapValues { (_, l) -> l.sumOf { it.transakcija.iznosCenti } }
+        poKat.forEach { (k, potroseno) ->
+            val limit = k.mjesecniLimitCenti?.takeIf { it > 0 } ?: return@forEach
+            val kljuc = "${c.sidro}_${k.id}"
+            if (prognozaPrekoracenja(potroseno, limit, proteklo, c.brojDana) && !postavke.prognozaPoslana(kljuc)) {
+                Obavijesti.prognoza(context, k.id, k.naziv, prognoza(potroseno, proteklo, c.brojDana), limit)
+                postavke.oznaciPrognozu(kljuc)
+            }
+        }
+    }
+
+    /** Zadnjih 7 dana i prethodnih 7 (za tjedni pregled). */
+    suspend fun tjedniSazetak(danas: LocalDate = LocalDate.now()): TjedniSazetak {
+        val zona = ZoneId.systemDefault()
+        val tx = tDao.dohvatiRaspon(
+            danas.minusDays(13).atStartOfDay(zona).toInstant().toEpochMilli(),
+            danas.plusDays(1).atStartOfDay(zona).toInstant().toEpochMilli(),
+        )
+        return tjedniSazetak(tx, danas)
+    }
+
+    /** Ima li danas ijedan unos (za dnevni podsjetnik). */
+    suspend fun imaUnosaDanas(): Boolean {
+        val zona = ZoneId.systemDefault()
+        val d = LocalDate.now()
+        return tDao.dohvatiRaspon(d.atStartOfDay(zona).toInstant().toEpochMilli(), d.plusDays(1).atStartOfDay(zona).toInstant().toEpochMilli())
+            .any { !it.transakcija.jePrijenos && it.transakcija.ponavljajuciId == null }
+    }
+
     private suspend fun promjena() {
         StanjeWidget.osvjezi(context)
+        runCatching { provjeriPrognoze() }
+        Obavijesti.provjeriMinus(context, tDao.ukupnoStanje())
         BackupManager.get(context).nakonPromjene()
     }
 
@@ -142,9 +270,10 @@ class BudgetRepository private constructor(private val context: Context) {
      * Stvara transakcije za sve dospjele ponavljajuće unose (i propuštene mjesece).
      * Poziva se pri otvaranju aplikacije, s widgeta i periodično iz pozadine. Vraća broj stvorenih unosa.
      */
-    suspend fun generirajPonavljajuce(danas: LocalDate = LocalDate.now()): Int = generiranje.withLock {
+    suspend fun generirajPonavljajuce(danas: LocalDate = LocalDate.now(), obavijesti: Boolean = true): Int = generiranje.withLock {
         val zona = ZoneId.systemDefault()
         var ukupno = 0
+        val naplaceno = mutableListOf<Pair<String, Long>>()
         db.withTransaction {
             rDao.dohvatiAktivne().forEach { p ->
                 val datumi = Ponavljanje.dospjeliDatumi(p, danas)
@@ -164,9 +293,12 @@ class BudgetRepository private constructor(private val context: Context) {
                 }
                 rDao.spremi(p.copy(zadnjiEpochDan = datumi.last().toEpochDay()))
                 ukupno += datumi.size
+                val naziv = p.opis.ifBlank { kDao.dohvati(p.kategorijaId)?.naziv ?: "Ponavljajući unos" }
+                repeat(datumi.size) { naplaceno += naziv to (if (p.tip == TipTransakcije.PRIHOD) p.iznosCenti else -p.iznosCenti) }
             }
         }
         if (ukupno > 0) promjena()
+        if (obavijesti) Obavijesti.ponavljajuci(context, naplaceno)
         ukupno
     }
 
@@ -179,6 +311,9 @@ class BudgetRepository private constructor(private val context: Context) {
     data class Sazetak(val stanje: Long, val ciklus: Zbroj, val raspon: Ciklus)
 
     companion object {
+        /** Oznaka (ikonaNaziv) skrivene kategorije prijenosa. */
+        const val KATEGORIJA_PRIJENOSA = "__prijenos"
+
         fun prilagodbeMapa(lista: List<PrilagodbaCiklusa>): Map<YearMonth, LocalDate> =
             lista.mapNotNull { p -> runCatching { YearMonth.parse(p.sidro) to LocalDate.ofEpochDay(p.pocetakEpochDan) }.getOrNull() }.toMap()
 

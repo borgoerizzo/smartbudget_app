@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mali_korijen"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_pozadina"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:paddingHorizontal="14dp"
+    android:paddingVertical="8dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:letterSpacing="0.08"
+        android:text="@string/widget_stanje_racuna"
+        android:textColor="#9AA7B8"
+        android:textSize="10dp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/mali_stanje"
+        android:layout_width="match_parent"
+        android:layout_height="34dp"
+        android:autoSizeMaxTextSize="26dp"
+        android:autoSizeMinTextSize="14dp"
+        android:autoSizeTextType="uniform"
+        android:fontFeatureSettings="tnum"
+        android:gravity="center_vertical"
+        android:maxLines="1"
+        android:text="0,00 €"
+        android:textColor="#00F5A0"
+        android:textSize="26dp"
+        android:textStyle="bold" />
+</LinearLayout>

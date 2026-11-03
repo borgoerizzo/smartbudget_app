@@ -35,6 +35,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import hr.smartbudget.app.data.BudgetRepository
 import hr.smartbudget.app.data.Kategorija
 import hr.smartbudget.app.data.PonavljajuciUnos
+import hr.smartbudget.app.data.Obavijesti
+import hr.smartbudget.app.data.VrstaObavijesti
+import hr.smartbudget.app.ui.screens.ObavijestInfoDijalog
+import hr.smartbudget.app.ui.screens.TjedniDijalog
+import hr.smartbudget.app.data.CiljStednje
+import hr.smartbudget.app.data.Racun
+import hr.smartbudget.app.ui.screens.CiljSheet
+import hr.smartbudget.app.ui.screens.PotvrdaBrisanja
+import hr.smartbudget.app.ui.screens.PrijenosSheet
+import hr.smartbudget.app.ui.screens.RacunSheet
 import hr.smartbudget.app.data.TipTransakcije
 import hr.smartbudget.app.ui.screens.PregledSheet
 import hr.smartbudget.app.data.PonavljajuciWorker
@@ -44,6 +54,8 @@ import hr.smartbudget.app.data.Transakcija
 import hr.smartbudget.app.ui.BudgetViewModel
 import hr.smartbudget.app.ui.DonjaNavigacija
 import hr.smartbudget.app.ui.Ekran
+import hr.smartbudget.app.ui.EkranZakljucavanja
+import hr.smartbudget.app.ui.Zakljucavanje
 import hr.smartbudget.app.ui.PozadinaEkrana
 import hr.smartbudget.app.ui.screens.AnalitikaEkran
 import hr.smartbudget.app.ui.screens.BudzetiEkran
@@ -62,7 +74,29 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         PonavljajuciWorker.zakazi(this)
-        setContent { SmartBudgetTheme { Aplikacija() } }
+        // Otvoreno dodirom na obavijest: prozor s objašnjenjem (nakon otključavanja, ako je zaključano)
+        Obavijesti.izNamjere(intent)
+        setContent {
+            SmartBudgetTheme {
+                if (Zakljucavanje.zakljucano.value) EkranZakljucavanja() else Aplikacija()
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        Obavijesti.izNamjere(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Zakljucavanje.naPokretanju(this)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Zakljucavanje.uPozadinu()
     }
 
     override fun onResume() {
@@ -85,6 +119,13 @@ private sealed interface Sheet {
     data class Pregled(val tip: TipTransakcije) : Sheet
     /** Pravilo ponavljanja; null = novo. */
     data class Pravilo(val p: PonavljajuciUnos?) : Sheet
+    /** Račun; null = novi. */
+    data class RacunS(val r: Racun?) : Sheet
+    data object Prijenos : Sheet
+    /** Dodir na prijenos u popisu: samo brisanje (oba dijela). */
+    data class PrijenosInfo(val t: Transakcija) : Sheet
+    /** Cilj štednje; null = novi. */
+    data class Cilj(val c: CiljStednje?) : Sheet
 }
 
 @Composable
@@ -102,11 +143,38 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
     }
     BackHandler(ekran != Ekran.POCETNA) { ekran = Ekran.POCETNA }
 
+    val tjedni by vm.tjedni.collectAsState()
+    Obavijesti.dodirnuta.value?.let { info ->
+        // Tjedni pregled ima vlastiti prozor s rekapitulacijom; ostale obavijesti prozor s objašnjenjem.
+        if (info.vrsta == VrstaObavijesti.TJEDNI) {
+            tjedni?.let { TjedniDijalog(it, info.test) { Obavijesti.dodirnuta.value = null } }
+            return@let
+        }
+        ObavijestInfoDijalog(
+            info, vm.pocetna.value.ukupnoStanje,
+            onAkcija = {
+                when (info.vrsta) {
+                    VrstaObavijesti.PONAVLJAJUCI, VrstaObavijesti.PROGNOZA -> ekran = Ekran.BUDZETI
+                    VrstaObavijesti.MINUS -> ekran = Ekran.POCETNA
+                    VrstaObavijesti.PODSJETNIK -> { ekran = Ekran.POCETNA; sheet = Sheet.Transakcije(null) }
+                    VrstaObavijesti.TJEDNI -> ekran = Ekran.POCETNA
+                }
+            },
+            onZatvori = { Obavijesti.dodirnuta.value = null },
+        )
+    }
+
     val pocetna by vm.pocetna.collectAsState()
     val analitika by vm.analitika.collectAsState()
     val budzeti by vm.budzeti.collectAsState()
     val kategorije by vm.kategorije.collectAsState()
     val ponavljajuci by vm.ponavljajuci.collectAsState()
+    val racuni by vm.racuni.collectAsState()
+    val stanjaRacuna by vm.stanjaRacuna.collectAsState()
+    val ciljevi by vm.ciljevi.collectAsState()
+    val zadnjiUnosi by vm.zadnjiUnosi.collectAsState()
+    val godisnji by vm.godisnji.collectAsState()
+    val naziviRacuna = racuni.map { it.naziv }
 
     val (gore, desno) = when (ekran) {
         Ekran.POCETNA -> Neon.Zelena.copy(alpha = .10f) to Color(0x337B2CBF)
@@ -123,20 +191,28 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onTrenutni = vm::trenutniCiklus,
                 onUrediCiklus = { ekran = Ekran.POSTAVKE },
                 onFilter = vm::postaviFilter,
-                onTransakcija = { sheet = Sheet.Transakcije(it.transakcija) },
+                onTransakcija = { sheet = if (it.transakcija.jePrijenos) Sheet.PrijenosInfo(it.transakcija) else Sheet.Transakcije(it.transakcija) },
                 onDodaj = { sheet = Sheet.Transakcije(null) },
                 onSpremiRaspon = vm::postaviRasponCiklusa,
                 onVratiZadaniRaspon = vm::vratiZadaniRaspon,
                 onPregled = { sheet = Sheet.Pregled(it) },
                 onPretraga = vm::postaviPretragu,
+                onPretragaSvi = vm::postaviPretraguSvi,
+                racuni = stanjaRacuna,
+                onRacun = { sheet = Sheet.RacunS(it) },
+                onNoviRacun = { sheet = Sheet.RacunS(null) },
+                onPrijenos = { sheet = Sheet.Prijenos },
             )
-            Ekran.ANALITIKA -> AnalitikaEkran(analitika, vm::prethodniCiklus, vm::sljedeciCiklus, vm::trenutniCiklus, vm::postaviBrojCiklusa)
+            Ekran.ANALITIKA -> AnalitikaEkran(analitika, vm::prethodniCiklus, vm::sljedeciCiklus, vm::trenutniCiklus, vm::postaviBrojCiklusa, godisnji, vm::postaviGodinu)
             Ekran.BUDZETI -> BudzetiEkran(
                 budzeti, ponavljajuci,
                 onNova = { sheet = Sheet.Kategorije(null) },
                 onUredi = { sheet = Sheet.Kategorije(it) },
                 onNoviPonavljajuci = { sheet = Sheet.Pravilo(null) },
                 onUrediPonavljajuci = { sheet = Sheet.Pravilo(it) },
+                ciljevi = ciljevi,
+                onNoviCilj = { sheet = Sheet.Cilj(null) },
+                onUrediCilj = { sheet = Sheet.Cilj(it) },
             )
             Ekran.POSTAVKE -> PostavkeEkran(vm)
         }
@@ -172,7 +248,18 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
             onObrisi = vm::obrisiTransakciju,
             onZatvori = { sheet = null },
             onSpremiPonavljajuci = vm::spremiPonavljajuci,
+            racuni = naziviRacuna,
+            onSpremiPodijeljeno = vm::spremiPodijeljeno,
+            zadnjiUnosi = zadnjiUnosi,
         )
+        is Sheet.RacunS -> RacunSheet(s.r, vm::spremiRacun, vm::obrisiRacun) { sheet = null }
+        Sheet.Prijenos -> PrijenosSheet(racuni, vm::prijenos) { sheet = null }
+        is Sheet.PrijenosInfo -> PotvrdaBrisanja(
+            "Obrisati prijenos?",
+            "${s.t.opis} · ${hr.smartbudget.app.domain.Novac.eur(s.t.iznosCenti)}\nBrišu se oba dijela prijenosa.",
+            { sheet = null },
+        ) { vm.obrisiTransakciju(s.t); sheet = null }
+        is Sheet.Cilj -> CiljSheet(s.c, vm::spremiCilj, vm::obrisiCilj) { sheet = null }
         is Sheet.Pregled -> PregledSheet(
             tip = s.tip,
             ciklus = pocetna.ciklus,
@@ -190,6 +277,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
             pravilo = s.p,
             novoPravilo = s.p == null,
             onObrisiPonavljajuci = vm::obrisiPonavljajuci,
+            racuni = naziviRacuna,
         )
         is Sheet.Kategorije -> KategorijaSheet(
             postojeca = s.k,

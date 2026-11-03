@@ -21,9 +21,12 @@ data class Zbroj(val prihodi: Long = 0, val troskovi: Long = 0) {
     val razlika get() = prihodi - troskovi
 }
 
+/** Prijenosi između računa nisu ni prihod ni trošak. */
+val TransakcijaSKategorijom.jeStvarna: Boolean get() = !transakcija.jePrijenos
+
 fun List<TransakcijaSKategorijom>.zbroj(): Zbroj = Zbroj(
-    prihodi = filter { it.transakcija.tip == TipTransakcije.PRIHOD }.sumOf { it.transakcija.iznosCenti },
-    troskovi = filter { it.transakcija.tip == TipTransakcije.TROSAK }.sumOf { it.transakcija.iznosCenti },
+    prihodi = filter { it.jeStvarna && it.transakcija.tip == TipTransakcije.PRIHOD }.sumOf { it.transakcija.iznosCenti },
+    troskovi = filter { it.jeStvarna && it.transakcija.tip == TipTransakcije.TROSAK }.sumOf { it.transakcija.iznosCenti },
 )
 
 enum class StatusLimita { BEZ_LIMITA, SIGURNO, BLIZU, PREKORACENO }
@@ -54,7 +57,7 @@ fun raspodjelaTroskova(transakcije: List<TransakcijaSKategorijom>): List<UdioKat
 
 /** Novčani i postotni udio svake kategorije u ukupnim prihodima ili troškovima ([tip]). */
 fun raspodjelaPoKategoriji(transakcije: List<TransakcijaSKategorijom>, tip: TipTransakcije): List<UdioKategorije> {
-    val troskovi = transakcije.filter { it.transakcija.tip == tip }
+    val troskovi = transakcije.filter { it.jeStvarna && it.transakcija.tip == tip }
     val ukupno = troskovi.sumOf { it.transakcija.iznosCenti }
     if (ukupno == 0L) return emptyList()
     return troskovi.groupBy { it.kategorija.id }.map { (_, lista) ->
@@ -96,7 +99,7 @@ fun tijekNovca(
     val tocke = mutableListOf<TockaTijeka>()
     var d = ciklus.pocetak
     while (!d.isAfter(zadnji)) {
-        poDanu[d].orEmpty().forEach {
+        poDanu[d].orEmpty().filter { it.jeStvarna }.forEach {
             if (it.transakcija.tip == TipTransakcije.PRIHOD) p += it.transakcija.iznosCenti else t += it.transakcija.iznosCenti
         }
         tocke += TockaTijeka(d, p, t, pocetnoStanje + p - t)
@@ -121,7 +124,7 @@ fun najvecePromjene(
     prije: List<TransakcijaSKategorijom>,
     koliko: Int = 3,
 ): List<PromjenaKategorije> {
-    fun poKat(l: List<TransakcijaSKategorijom>) = l.filter { it.transakcija.tip == TipTransakcije.TROSAK }
+    fun poKat(l: List<TransakcijaSKategorijom>) = l.filter { it.jeStvarna && it.transakcija.tip == TipTransakcije.TROSAK }
         .groupBy { it.kategorija.id }
     val s = poKat(sada)
     val p = poKat(prije)

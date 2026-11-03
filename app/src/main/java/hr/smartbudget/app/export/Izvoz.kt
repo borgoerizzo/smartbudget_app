@@ -23,7 +23,11 @@ enum class FormatIzvoza(val nastavak: String, val mime: String, val naziv: Strin
 object Izvoz {
     val zaglavlje = listOf("Datum", "Vrijeme", "Tip", "Kategorija", "Iznos (€)", "Način plaćanja", "Napomena")
 
-    private fun tip(t: TransakcijaSKategorijom) = if (t.transakcija.tip == TipTransakcije.PRIHOD) "Prihod" else "Trošak"
+    private fun tip(t: TransakcijaSKategorijom) = when {
+        t.transakcija.jePrijenos -> "Prijenos"
+        t.transakcija.tip == TipTransakcije.PRIHOD -> "Prihod"
+        else -> "Trošak"
+    }
 
     fun zapisi(format: FormatIzvoza, transakcije: List<TransakcijaSKategorijom>, out: OutputStream) = when (format) {
         FormatIzvoza.CSV -> csv(transakcije, out)

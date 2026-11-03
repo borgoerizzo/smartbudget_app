@@ -67,7 +67,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import hr.smartbudget.app.data.AppPostavke
+import hr.smartbudget.app.data.Racun
+import hr.smartbudget.app.ui.StanjeRacunaUi
+import hr.smartbudget.app.data.StanjePostavki
 import hr.smartbudget.app.data.TipTransakcije
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import hr.smartbudget.app.data.TransakcijaSKategorijom
 import hr.smartbudget.app.domain.HrDatum
 import hr.smartbudget.app.domain.Novac
@@ -104,7 +110,13 @@ fun PocetnaEkran(
     onVratiZadaniRaspon: () -> Unit,
     onPregled: (TipTransakcije) -> Unit,
     onPretraga: (String) -> Unit,
+    onPretragaSvi: (Boolean) -> Unit,
+    racuni: List<StanjeRacunaUi>,
+    onRacun: (Racun) -> Unit,
+    onNoviRacun: () -> Unit,
+    onPrijenos: () -> Unit,
 ) {
+    val privatnost by AppPostavke.get(LocalContext.current).stanje.collectAsState()
     var biramRaspon by remember { mutableStateOf(false) }
     if (biramRaspon) {
         RasponCiklusaDijalog(
@@ -121,12 +133,12 @@ fun PocetnaEkran(
     // Dok je pretraga u fokusu: polje zalijepljeno na vrhu, prvi rezultat (stavka 4) odmah ispod njega,
     // ponovno nakon svakog znaka i kad se tipkovnica pojavi.
     LaunchedEffect(fokusPretrage, tipkovnicaDno) {
-        if (fokusPretrage) stanjeListe.animateScrollToItem(4, -pomakRezultata)
+        if (fokusPretrage) stanjeListe.animateScrollToItem(5, -pomakRezultata)
     }
     // Kod tipkanja bez animacije i samo ako je popis pomaknut, da brzi unos ne izgubi znak.
     LaunchedEffect(s.pretraga, s.grupe.size) {
-        if (fokusPretrage && stanjeListe.firstVisibleItemIndex != 3 && stanjeListe.firstVisibleItemIndex != 4) {
-            stanjeListe.scrollToItem(4, -pomakRezultata)
+        if (fokusPretrage && stanjeListe.firstVisibleItemIndex != 4 && stanjeListe.firstVisibleItemIndex != 5) {
+            stanjeListe.scrollToItem(5, -pomakRezultata)
         }
     }
     Box(Modifier.fillMaxSize()) {
@@ -140,10 +152,11 @@ fun PocetnaEkran(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             item { Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onUrediCiklus) { biramRaspon = true } }
-            item { HeroKartica(s, onPregled) }
+            item { HeroKartica(s, privatnost, onPregled) }
+            item { RacuniTraka(racuni, privatnost.sakrijStanje, onRacun, onNoviRacun, onPrijenos) }
             stickyHeader {
                 Box(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    PoljePretrage(s.pretraga, onPretraga) { fokusPretrage = it }
+                    PoljePretrage(s.pretraga, onPretraga, s.pretragaSvi, onPretragaSvi) { fokusPretrage = it }
                 }
             }
             item {
@@ -169,7 +182,7 @@ fun PocetnaEkran(
                     )
                 }
             }
-            items(s.grupe, key = { it.datum.toEpochDay() }) { g -> GrupaDanaKartica(g, onTransakcija) }
+            items(s.grupe, key = { it.datum.toEpochDay() }) { g -> GrupaDanaKartica(g, privatnost.sakrijPrihod, onTransakcija) }
             // Prostor ispod rezultata, da se i kratki popis može poravnati odmah ispod polja pretrage.
             if (fokusPretrage) item { Spacer(Modifier.fillParentMaxHeight()) }
         }
@@ -195,7 +208,7 @@ fun PocetnaEkran(
 private val VISINA_PRETRAGE = 52.dp + 12.dp
 
 @Composable
-private fun PoljePretrage(upit: String, onPretraga: (String) -> Unit, onFokus: (Boolean) -> Unit) {
+private fun PoljePretrage(upit: String, onPretraga: (String) -> Unit, svi: Boolean, onSvi: (Boolean) -> Unit, onFokus: (Boolean) -> Unit) {
     val tipkovnica = LocalSoftwareKeyboardController.current
     var tekst by rememberSaveable { mutableStateOf(upit) }
     val oblik = RoundedCornerShape(24.dp)
@@ -226,6 +239,18 @@ private fun PoljePretrage(upit: String, onPretraga: (String) -> Unit, onFokus: (
                     if (it.isFocused != fokus) onFokus(it.isFocused)
                     fokus = it.isFocused
                 },
+            )
+        }
+        // Pretraga kroz sve cikluse ili samo kroz prikazani
+        if (tekst.isNotEmpty() || svi) {
+            Text(
+                if (svi) "Svi ciklusi" else "Ovaj ciklus",
+                color = if (svi) Neon.Cijan else Neon.TekstSiv, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (svi) Neon.Cijan.copy(alpha = .14f) else Color(0x0FFFFFFF))
+                    .clickable(onClickLabel = "Promijeni opseg pretrage") { onSvi(!svi) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
             )
         }
         if (tekst.isNotEmpty()) {
@@ -327,7 +352,7 @@ private fun RasponCiklusaDijalog(
 }
 
 @Composable
-private fun HeroKartica(s: PocetnaStanje, onPregled: (TipTransakcije) -> Unit) {
+private fun HeroKartica(s: PocetnaStanje, privatnost: StanjePostavki, onPregled: (TipTransakcije) -> Unit) {
     val neto = s.neto
     val netoBoja = if (neto >= 0) Neon.Zelena else Neon.Crvena
     Kartica(
@@ -348,9 +373,17 @@ private fun HeroKartica(s: PocetnaStanje, onPregled: (TipTransakcije) -> Unit) {
                 Neon.Cijan,
             )
         }
-        val iznos = Novac.stanje(neto).removeSuffix(" €")
+        // Skriveno stanje: dodir na iznos ga privremeno otkrije.
+        var otkriveno by remember { mutableStateOf(false) }
+        val sakrijStanje = privatnost.sakrijStanje && !otkriveno
+        val sakrijPrihod = privatnost.sakrijPrihod && !otkriveno
+        val iznos = if (sakrijStanje) "••••" else Novac.stanje(neto).removeSuffix(" €")
         Text(
-            buildAnnotatedString {
+            modifier = Modifier.clickable(
+                enabled = privatnost.sakrijStanje || privatnost.sakrijPrihod,
+                onClickLabel = if (otkriveno) "Sakrij iznose" else "Prikaži iznose",
+            ) { otkriveno = !otkriveno },
+            text = buildAnnotatedString {
                 append(iznos)
                 withStyle(SpanStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold)) { append(" €") }
             },
@@ -360,7 +393,7 @@ private fun HeroKartica(s: PocetnaStanje, onPregled: (TipTransakcije) -> Unit) {
             ),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SubMetrika("Prihodi", Novac.predznak(s.zbroj.prihodi), Neon.Zelena, "arrowDownLeft", Modifier.weight(1f)) { onPregled(TipTransakcije.PRIHOD) }
+            SubMetrika("Prihodi", if (sakrijPrihod) AppPostavke.SKRIVENO else Novac.predznak(s.zbroj.prihodi), Neon.Zelena, "arrowDownLeft", Modifier.weight(1f)) { onPregled(TipTransakcije.PRIHOD) }
             SubMetrika("Rashodi", Novac.predznak(-s.zbroj.troskovi), Neon.Crvena, "arrowUpRight", Modifier.weight(1f)) { onPregled(TipTransakcije.TROSAK) }
         }
         if (s.prijenos < 0) {
@@ -403,10 +436,11 @@ private fun HeroKartica(s: PocetnaStanje, onPregled: (TipTransakcije) -> Unit) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MalaMetrika("Stanje računa", Novac.stanje(s.ukupnoStanje), if (s.ukupnoStanje >= 0) Neon.Tekst else Neon.Crvena, Modifier.weight(1f))
+            MalaMetrika("Stanje računa", if (sakrijStanje) AppPostavke.SKRIVENO else Novac.stanje(s.ukupnoStanje), if (s.ukupnoStanje >= 0) Neon.Tekst else Neon.Crvena, Modifier.weight(1f))
             MalaMetrika("Dnevni prosjek", Novac.eur(s.dnevniProsjek) + "/dan", Neon.Tekst, Modifier.weight(1f))
         }
-        s.tempo?.let { (tekst, upozorenje) ->
+        s.tempo?.let { (tekstSIznosom, upozorenje) ->
+            val tekst = if (sakrijStanje) s.tempoBezIznosa ?: tekstSIznosom else tekstSIznosom
             val boja = if (upozorenje) Neon.Crvena else Neon.Zelena
             Row(
                 Modifier
@@ -455,13 +489,15 @@ private fun MalaMetrika(naslov: String, vrijednost: String, boja: Color, modifie
 }
 
 @Composable
-private fun GrupaDanaKartica(g: GrupaDana, onTransakcija: (TransakcijaSKategorijom) -> Unit) {
+private fun GrupaDanaKartica(g: GrupaDana, sakrijPrihod: Boolean, onTransakcija: (TransakcijaSKategorijom) -> Unit) {
+    // Dnevni zbroj otkriva prihod ako ga dan sadrži.
+    val sakrijZbroj = sakrijPrihod && g.stavke.any { it.transakcija.tip == TipTransakcije.PRIHOD }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.Bottom) {
             Text(g.naslov, style = Tip.tijelo.copy(fontWeight = FontWeight.Bold))
             Spacer(Modifier.width(8.dp))
             Text(g.podnaslov, style = Tip.malo, modifier = Modifier.weight(1f))
-            Text(Novac.predznak(g.neto), color = if (g.neto >= 0) Neon.Zelena else Neon.Crvena, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, style = Tip.iznos)
+            Text(if (sakrijZbroj) AppPostavke.SKRIVENO else Novac.predznak(g.neto), color = if (g.neto >= 0) Neon.Zelena else Neon.Crvena, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, style = Tip.iznos)
         }
         Column(
             Modifier
@@ -472,15 +508,22 @@ private fun GrupaDanaKartica(g: GrupaDana, onTransakcija: (TransakcijaSKategorij
         ) {
             g.stavke.forEachIndexed { i, t ->
                 if (i > 0) HorizontalDivider(color = Neon.RubSlab, thickness = 1.dp)
-                StavkaTransakcije(t) { onTransakcija(t) }
+                StavkaTransakcije(t, sakrijPrihod = sakrijPrihod) { onTransakcija(t) }
             }
         }
     }
 }
 
 @Composable
-fun StavkaTransakcije(t: TransakcijaSKategorijom, udio: String? = null, sDatumom: Boolean = false, onClick: () -> Unit) {
+fun StavkaTransakcije(
+    t: TransakcijaSKategorijom,
+    udio: String? = null,
+    sDatumom: Boolean = false,
+    sakrijPrihod: Boolean = false,
+    onClick: () -> Unit,
+) {
     val prihod = t.transakcija.tip == TipTransakcije.PRIHOD
+    val prijenos = t.transakcija.jePrijenos
     Column(
         Modifier
             .fillMaxWidth()
@@ -495,15 +538,31 @@ fun StavkaTransakcije(t: TransakcijaSKategorijom, udio: String? = null, sDatumom
             )
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    Novac.predznak(if (prihod) t.transakcija.iznosCenti else -t.transakcija.iznosCenti),
-                    style = Tip.iznos, color = if (prihod) Neon.Zelena else Neon.Crvena,
+                    if (prihod && sakrijPrihod) "+" + AppPostavke.SKRIVENO
+                    else Novac.predznak(if (prihod) t.transakcija.iznosCenti else -t.transakcija.iznosCenti),
+                    style = Tip.iznos, color = when { prijenos -> Neon.TekstSvijetliSiv; prihod -> Neon.Zelena; else -> Neon.Crvena },
                 )
                 // Udio u ukupnom (prikaz u pregledu prihoda/rashoda)
                 if (udio != null) Text(udio, style = Tip.oznaka.copy(fontSize = 11.sp))
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.weight(1f)) { PillKategorije(t.kategorija) }
+            Box(Modifier.weight(1f)) {
+                if (prijenos) {
+                    Row(
+                        Modifier.height(24.dp).clip(RoundedCornerShape(12.dp)).background(Neon.Cijan.copy(alpha = .14f)).padding(start = 7.dp, end = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Ikone.ui("transfer"), null, Modifier.size(14.dp), tint = Neon.Cijan)
+                        Text(" Prijenos", color = Neon.Cijan, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                } else {
+                    PillKategorije(t.kategorija)
+                }
+            }
+            if (t.transakcija.slika != null) {
+                Icon(Ikone.ui("image"), "Ima fotografiju računa", Modifier.size(14.dp), tint = Neon.TekstSiv)
+            }
             if (t.transakcija.ponavljajuciId != null) {
                 Icon(Ikone.ikona("repeat"), "Ponavljajući unos", Modifier.size(14.dp), tint = Neon.LjubicastaTekst)
             }

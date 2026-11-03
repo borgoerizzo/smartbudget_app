@@ -28,6 +28,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import hr.smartbudget.app.data.Kategorija
+import hr.smartbudget.app.data.CiljStednje
 import hr.smartbudget.app.data.PonavljajuciSKategorijom
 import hr.smartbudget.app.data.PonavljajuciUnos
 import hr.smartbudget.app.data.TipTransakcije
@@ -57,6 +58,9 @@ fun BudzetiEkran(
     onUredi: (Kategorija) -> Unit,
     onNoviPonavljajuci: () -> Unit,
     onUrediPonavljajuci: (PonavljajuciUnos) -> Unit,
+    ciljevi: List<CiljStednje>,
+    onNoviCilj: () -> Unit,
+    onUrediCilj: (CiljStednje) -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
@@ -74,6 +78,7 @@ fun BudzetiEkran(
         }
         item { UkupniLimit(s) }
         item { PonavljajuciKartica(ponavljajuci, onNoviPonavljajuci, onUrediPonavljajuci) }
+        item { CiljeviKartica(ciljevi, onNoviCilj, onUrediCilj) }
         item {
             Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Limiti po kategorijama", style = Tip.naslovKartice.copy(fontSize = 18.sp))
@@ -172,6 +177,15 @@ private fun KarticaKategorije(b: BudzetKategorije, onClick: () -> Unit) {
         }
         if (b.posto != null && lim != null) {
             TrakaNapretka((b.posto / 100).toFloat(), st.ispuna, st.boja, marker = .8f)
+            // Prognoza: kamo vodi dosadašnji tempo do kraja ciklusa
+            b.prognoza?.let { p ->
+                if (p > lim && b.potroseno < lim) {
+                    Text(
+                        "Prognoza do kraja ciklusa: ${Novac.eur(p)} (${(p * 100 / lim)} % limita)",
+                        color = Neon.Jantar, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
             val ostatak = lim - b.potroseno
             Text(
                 if (ostatak >= 0) "Preostalo ${Novac.eur(ostatak)}" else "Prekoračeno za ${Novac.eur(-ostatak)}",

@@ -37,7 +37,42 @@ data class Transakcija(
     val nacinPlacanja: String = NacinPlacanja.KARTICA,
     /** Ako je unos nastao iz ponavljajućeg unosa: njegov id (bez stranog ključa, pravilo se smije obrisati). */
     val ponavljajuciId: Long? = null,
+    /** Dio prijenosa između računa: ne broji se u prihode/troškove, samo mijenja stanja računa. */
+    @ColumnInfo(defaultValue = "0") val jePrijenos: Boolean = false,
+    /** Zajednički id za povezane unose: dva dijela prijenosa ili dijelovi podijeljenog troška. */
+    val grupaId: Long? = null,
+    /** Putanja fotografije računa u internoj memoriji aplikacije. */
+    val slika: String? = null,
 )
+
+/**
+ * Račun (tekući, kartica, gotovina, štednja...). Transakcija pripada računu po nazivu
+ * ([Transakcija.nacinPlacanja]); stanje računa = početno stanje + njegove transakcije.
+ */
+@Entity(tableName = "racuni")
+data class Racun(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val naziv: String,
+    val bojaHex: String,
+    val ikonaNaziv: String,
+    val pocetnoStanjeCenti: Long = 0,
+    val redoslijed: Int = 0,
+)
+
+/** Cilj štednje s rokom; ušteđeni iznos korisnik ručno povećava uplatama. */
+@Entity(tableName = "ciljevi")
+data class CiljStednje(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val naziv: String,
+    val ciljCenti: Long,
+    val ustedjenoCenti: Long = 0,
+    val rokEpochDan: Long? = null,
+    val bojaHex: String,
+    val ikonaNaziv: String,
+)
+
+/** Stanje jednog računa iz transakcija (bez početnog stanja). */
+data class ZbrojRacuna(val nacinPlacanja: String, val stanje: Long)
 
 /**
  * Ponavljajući unos: isti prihod ili trošak svaki mjesec na zadani dan.
