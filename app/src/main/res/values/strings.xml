@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SmartBudget</string>
+    <string name="widget_opis">Stanje računa, ulaz i izlaz u ciklusu te brzi unos prihoda ili troška</string>
+    <string name="widget_stanje_racuna">STANJE RAČUNA</string>
+    <string name="widget_ulaz">Ulaz u ciklusu</string>
+    <string name="widget_izlaz">Izlaz u ciklusu</string>
+    <string name="widget_dodaj_prihod">+ Prihod</string>
+    <string name="widget_dodaj_trosak">− Trošak</string>
+    <string name="brzi_unos">Brzi unos</string>
+</resources>
