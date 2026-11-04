@@ -1,5 +1,12 @@
 package hr.smartbudget.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -127,6 +134,8 @@ fun PocetnaEkran(
         )
     }
     val stanjeListe = rememberLazyListState()
+    // Dani čije su stavke skupljene (zadano su svi rašireni).
+    var skupljeni by rememberSaveable { mutableStateOf(setOf<Long>()) }
     var fokusPretrage by remember { mutableStateOf(false) }
     // Visina tipkovnice: popis dobiva toliki donji razmak, pa ništa ne ostaje skriveno ispod nje.
     val tipkovnicaDno = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
@@ -164,7 +173,14 @@ fun PocetnaEkran(
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("Transakcije", style = Tip.naslov)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterTransakcija.entries.forEach { f -> NeonChip(f.naziv, s.filter == f, { onFilter(f) }) }
+                        FilterTransakcija.entries.forEach { f ->
+                            val boja = when (f) {
+                                FilterTransakcija.SVE -> Neon.Zelena
+                                FilterTransakcija.TROSKOVI -> Neon.Crvena
+                                FilterTransakcija.PRIHODI -> Neon.Cijan
+                            }
+                            NeonChip(f.naziv, s.filter == f, { onFilter(f) }, boja = boja)
+                        }
                     }
                 }
             }
@@ -183,7 +199,10 @@ fun PocetnaEkran(
                     )
                 }
             }
-            items(s.grupe, key = { it.datum.toEpochDay() }) { g -> GrupaDanaKartica(g, privatnost.sakrijPrihod, onTransakcija) }
+            items(s.grupe, key = { it.datum.toEpochDay() }) { g ->
+                val dan = g.datum.toEpochDay()
+                GrupaDanaKartica(g, privatnost.sakrijPrihod, dan !in skupljeni, { skupljeni = if (dan in skupljeni) skupljeni - dan else skupljeni + dan }, onTransakcija)
+            }
             // Prostor ispod rezultata, da se i kratki popis može poravnati odmah ispod polja pretrage.
             if (fokusPretrage) item { Spacer(Modifier.fillParentMaxHeight()) }
         }
@@ -490,16 +509,39 @@ private fun MalaMetrika(naslov: String, vrijednost: String, boja: Color, modifie
 }
 
 @Composable
-private fun GrupaDanaKartica(g: GrupaDana, sakrijPrihod: Boolean, onTransakcija: (TransakcijaSKategorijom) -> Unit) {
+private fun GrupaDanaKartica(
+    g: GrupaDana,
+    sakrijPrihod: Boolean,
+    rasireno: Boolean,
+    onPrebaci: () -> Unit,
+    onTransakcija: (TransakcijaSKategorijom) -> Unit,
+) {
     // Dnevni zbroj otkriva prihod ako ga dan sadrži.
     val sakrijZbroj = sakrijPrihod && g.stavke.any { it.transakcija.tip == TipTransakcije.PRIHOD }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.Bottom) {
-            Text(g.naslov, style = Tip.tijelo.copy(fontWeight = FontWeight.Bold))
+        val okret by animateFloatAsState(if (rasireno) 0f else -90f, label = "strelica")
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClickLabel = if (rasireno) "Skupi dan" else "Raširi dan", onClick = onPrebaci)
+                .then(
+                    if (rasireno) Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                    else Modifier.background(Neon.Kartica).border(1.dp, Color(0x12FFFFFF), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 12.dp),
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Ikone.ui("chevDown"), null, Modifier.size(16.dp).rotate(okret), tint = Neon.TekstSiv)
+            Spacer(Modifier.width(6.dp))
+            Text(g.naslov, style = Tip.tijelo.copy(fontWeight = FontWeight.Bold), maxLines = 1)
             Spacer(Modifier.width(8.dp))
-            Text(g.podnaslov, style = Tip.malo, modifier = Modifier.weight(1f))
+            Text(
+                g.podnaslov + if (rasireno) "" else " · ${g.stavke.size} ${if (g.stavke.size % 10 == 1 && g.stavke.size % 100 != 11) "stavka" else if (g.stavke.size % 10 in 2..4 && g.stavke.size % 100 !in 12..14) "stavke" else "stavki"}",
+                style = Tip.malo, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
             Text(if (sakrijZbroj) AppPostavke.SKRIVENO else Novac.predznak(g.neto), color = if (g.neto >= 0) Neon.Zelena else Neon.Crvena, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, style = Tip.iznos)
         }
+        AnimatedVisibility(rasireno, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -511,6 +553,7 @@ private fun GrupaDanaKartica(g: GrupaDana, sakrijPrihod: Boolean, onTransakcija:
                 if (i > 0) HorizontalDivider(color = Neon.RubSlab, thickness = 1.dp)
                 StavkaTransakcije(t, sakrijPrihod = sakrijPrihod) { onTransakcija(t) }
             }
+        }
         }
     }
 }

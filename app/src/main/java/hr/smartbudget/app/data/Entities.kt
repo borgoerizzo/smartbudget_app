@@ -69,6 +69,17 @@ data class CiljStednje(
     val rokEpochDan: Long? = null,
     val bojaHex: String,
     val ikonaNaziv: String,
+    /** Dan kad je cilj postavljen (za tempo štednje); null kod starih kopija. */
+    val kreiranEpochDan: Long? = null,
+)
+
+/** Jedna uplata na cilj štednje (negativna = povlačenje), za povijest i tempo. */
+@Entity(tableName = "uplate_cilja", indices = [Index("ciljId")])
+data class UplataCilja(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ciljId: Long,
+    val iznosCenti: Long,
+    val epochDan: Long,
 )
 
 /** Stanje jednog računa iz transakcija (bez početnog stanja). */

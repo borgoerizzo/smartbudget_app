@@ -210,6 +210,15 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     val ciljevi: StateFlow<List<CiljStednje>> = repo.db.ciljevi().promatrajSve()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** Uplate na ciljeve, najnovije prve. */
+    val uplate: StateFlow<List<hr.smartbudget.app.data.UplataCilja>> = repo.db.uplate().promatrajSve()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Višak (prihodi − rashodi) prošlog ciklusa, kao prijedlog za uplatu na cilj; null ako ga nema. */
+    val visakProslogCiklusa: StateFlow<Long?> = combine(cycleManager, danas) { cm, d -> cm.ciklusZaSidro(cm.ciklusZa(d).sidro.minusMonths(1)) }
+        .flatMapLatest { p -> tDao.promatrajRaspon(p.odMillis(), p.doMillisIskljucivo()).map { tx -> tx.zbroj().razlika.takeIf { it > 0 } } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     /** Zadnji unosi za prijedloge naziva/kategorije/iznosa pri unosu. */
     val zadnjiUnosi: StateFlow<List<TransakcijaSKategorijom>> = tDao.promatrajZadnje()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -367,6 +376,11 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     fun spremiCilj(c: CiljStednje) = repo.opseg.launch {
         repo.spremiCilj(c)
         _poruke.tryEmit(if (c.id == 0L) "Cilj štednje dodan" else "Cilj spremljen")
+    }
+
+    fun uplatiNaCilj(c: CiljStednje, iznosCenti: Long) = repo.opseg.launch {
+        repo.uplatiNaCilj(c, iznosCenti)
+        _poruke.tryEmit(if (iznosCenti >= 0) "Uplaćeno ${Novac.eur(iznosCenti)} na \"${c.naziv}\"" else "Povučeno ${Novac.eur(-iznosCenti)} s \"${c.naziv}\"")
     }
 
     fun obrisiCilj(c: CiljStednje) = repo.opseg.launch { repo.obrisiCilj(c); _poruke.tryEmit("Cilj obrisan") }

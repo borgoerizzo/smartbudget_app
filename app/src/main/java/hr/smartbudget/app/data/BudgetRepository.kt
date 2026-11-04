@@ -183,8 +183,28 @@ class BudgetRepository private constructor(private val context: Context) {
 
     // --- Ciljevi štednje ---
 
-    suspend fun spremiCilj(c: CiljStednje) = db.ciljevi().spremi(c)
-    suspend fun obrisiCilj(c: CiljStednje) = db.ciljevi().obrisi(c)
+    /** Sprema cilj; promjena ušteđenog iznosa bilježi se kao uplata (ili povlačenje). */
+    suspend fun spremiCilj(c: CiljStednje) = db.withTransaction {
+        val danas = LocalDate.now().toEpochDay()
+        val stari = if (c.id == 0L) null else db.ciljevi().sve().firstOrNull { it.id == c.id }
+        val novi = c.copy(kreiranEpochDan = c.kreiranEpochDan ?: stari?.kreiranEpochDan ?: danas)
+        val id = db.ciljevi().spremi(novi).let { if (c.id == 0L) it else c.id }
+        val razlika = novi.ustedjenoCenti - (stari?.ustedjenoCenti ?: 0L)
+        if (razlika != 0L) db.uplate().umetni(UplataCilja(ciljId = id, iznosCenti = razlika, epochDan = danas))
+    }.also { BackupManager.get(context).nakonPromjene() }
+
+    /** Uplata (pozitivna) ili povlačenje (negativno) na cilj. */
+    suspend fun uplatiNaCilj(c: CiljStednje, iznosCenti: Long) = db.withTransaction {
+        val trenutni = db.ciljevi().sve().firstOrNull { it.id == c.id } ?: return@withTransaction
+        val novo = (trenutni.ustedjenoCenti + iznosCenti).coerceAtLeast(0)
+        db.ciljevi().spremi(trenutni.copy(ustedjenoCenti = novo))
+        db.uplate().umetni(UplataCilja(ciljId = c.id, iznosCenti = novo - trenutni.ustedjenoCenti, epochDan = LocalDate.now().toEpochDay()))
+    }.also { BackupManager.get(context).nakonPromjene() }
+
+    suspend fun obrisiCilj(c: CiljStednje) = db.withTransaction {
+        db.uplate().obrisiZaCilj(c.id)
+        db.ciljevi().obrisi(c)
+    }.also { BackupManager.get(context).nakonPromjene() }
 
     suspend fun spremiKategoriju(k: Kategorija) {
         kDao.spremi(k)

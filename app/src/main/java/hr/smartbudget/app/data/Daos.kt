@@ -196,6 +196,27 @@ interface CiljDao {
 }
 
 @Dao
+interface UplataDao {
+    @Query("SELECT * FROM uplate_cilja ORDER BY epochDan DESC, id DESC")
+    fun promatrajSve(): Flow<List<UplataCilja>>
+
+    @Query("SELECT * FROM uplate_cilja")
+    suspend fun sve(): List<UplataCilja>
+
+    @Insert
+    suspend fun umetni(u: UplataCilja): Long
+
+    @Insert
+    suspend fun umetni(lista: List<UplataCilja>)
+
+    @Query("DELETE FROM uplate_cilja WHERE ciljId = :ciljId")
+    suspend fun obrisiZaCilj(ciljId: Long)
+
+    @Query("DELETE FROM uplate_cilja")
+    suspend fun obrisiSve()
+}
+
+@Dao
 interface PostavkeDao {
     @Query("SELECT * FROM postavke_ciklusa WHERE id = 1")
     fun promatraj(): Flow<PostavkeCiklusa?>

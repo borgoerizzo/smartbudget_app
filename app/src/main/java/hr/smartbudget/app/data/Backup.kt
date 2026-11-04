@@ -47,6 +47,7 @@ data class SadrzajKopije(
     val prilagodbe: List<PrilagodbaCiklusa> = emptyList(),
     val racuni: List<Racun> = emptyList(),
     val ciljevi: List<CiljStednje> = emptyList(),
+    val uplate: List<UplataCilja> = emptyList(),
 )
 
 /**
@@ -168,6 +169,7 @@ class BackupManager private constructor(private val context: Context) {
                 prilagodbe = db.prilagodbe().sve(),
                 racuni = db.racuni().sve(),
                 ciljevi = db.ciljevi().sve(),
+                uplate = db.uplate().sve(),
             )
         }
     }
@@ -195,14 +197,16 @@ class BackupManager private constructor(private val context: Context) {
             if (k.racuni.isNotEmpty()) { db.racuni().obrisiSve(); db.racuni().umetni(k.racuni) }
             db.ciljevi().obrisiSve()
             db.ciljevi().umetni(k.ciljevi)
+            db.uplate().obrisiSve()
+            db.uplate().umetni(k.uplate)
         }
         hr.smartbudget.app.widget.StanjeWidget.osvjezi(context)
     }
 
     companion object {
         const val ZADRZI = 10
-        /** 2: ručni rasponi ciklusa; 3: računi, ciljevi, prijenosi i podjele (stariji formati se i dalje mogu vratiti). */
-        private const val VERZIJA_FORMATA = 3
+        /** 2: ručni rasponi ciklusa; 3: računi, ciljevi, prijenosi i podjele; 4: uplate na ciljeve (stariji formati se i dalje mogu vratiti). */
+        private const val VERZIJA_FORMATA = 4
 
         @Volatile private var instance: BackupManager? = null
         fun get(context: Context): BackupManager = instance ?: synchronized(this) {
@@ -242,7 +246,11 @@ class BackupManager private constructor(private val context: Context) {
                 JSONObject().apply {
                     put("id", it.id); put("naziv", it.naziv); put("ciljCenti", it.ciljCenti); put("ustedjenoCenti", it.ustedjenoCenti)
                     put("rokEpochDan", it.rokEpochDan ?: JSONObject.NULL); put("bojaHex", it.bojaHex); put("ikonaNaziv", it.ikonaNaziv)
+                    put("kreiranEpochDan", it.kreiranEpochDan ?: JSONObject.NULL)
                 }
+            }))
+            put("uplateCilja", JSONArray(k.uplate.map {
+                JSONObject().apply { put("id", it.id); put("ciljId", it.ciljId); put("iznosCenti", it.iznosCenti); put("epochDan", it.epochDan) }
             }))
             put("prilagodbeCiklusa", JSONArray(k.prilagodbe.map {
                 JSONObject().apply { put("sidro", it.sidro); put("pocetakEpochDan", it.pocetakEpochDan) }
@@ -286,7 +294,10 @@ class BackupManager private constructor(private val context: Context) {
                     Racun(it.getLong("id"), it.getString("naziv"), it.getString("bojaHex"), it.getString("ikonaNaziv"), it.getLong("pocetnoStanjeCenti"), it.optInt("redoslijed"))
                 },
                 ciljevi = (o.optJSONArray("ciljevi") ?: JSONArray()).mapiraj {
-                    CiljStednje(it.getLong("id"), it.getString("naziv"), it.getLong("ciljCenti"), it.getLong("ustedjenoCenti"), it.dugiIliNull("rokEpochDan"), it.getString("bojaHex"), it.getString("ikonaNaziv"))
+                    CiljStednje(it.getLong("id"), it.getString("naziv"), it.getLong("ciljCenti"), it.getLong("ustedjenoCenti"), it.dugiIliNull("rokEpochDan"), it.getString("bojaHex"), it.getString("ikonaNaziv"), it.dugiIliNull("kreiranEpochDan"))
+                },
+                uplate = (o.optJSONArray("uplateCilja") ?: JSONArray()).mapiraj {
+                    UplataCilja(it.getLong("id"), it.getLong("ciljId"), it.getLong("iznosCenti"), it.getLong("epochDan"))
                 },
                 prilagodbe = (o.optJSONArray("prilagodbeCiklusa") ?: JSONArray()).mapiraj {
                     PrilagodbaCiklusa(it.getString("sidro"), it.getLong("pocetakEpochDan"))

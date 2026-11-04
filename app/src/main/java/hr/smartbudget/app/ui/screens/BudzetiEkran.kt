@@ -61,6 +61,7 @@ fun BudzetiEkran(
     ciljevi: List<CiljStednje>,
     onNoviCilj: () -> Unit,
     onUrediCilj: (CiljStednje) -> Unit,
+    onUplatiCilj: (CiljStednje, Boolean) -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
@@ -78,7 +79,7 @@ fun BudzetiEkran(
         }
         item { UkupniLimit(s) }
         item { PonavljajuciKartica(ponavljajuci, onNoviPonavljajuci, onUrediPonavljajuci) }
-        item { CiljeviKartica(ciljevi, onNoviCilj, onUrediCilj) }
+        item { CiljeviKartica(ciljevi, onNoviCilj, onUrediCilj, onUplatiCilj) }
         item {
             Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Limiti po kategorijama", style = Tip.naslovKartice.copy(fontSize = 18.sp))

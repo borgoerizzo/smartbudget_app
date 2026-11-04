@@ -41,6 +41,7 @@ object Ikone {
 
     private val ui = mapOf(
         "plus" to "M12 5v14 M5 12h14",
+        "minus" to "M5 12h14",
         "close" to "M6 6l12 12 M18 6 6 18",
         "check" to "M5 12l5 5 9-12",
         "calendar" to "M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4",

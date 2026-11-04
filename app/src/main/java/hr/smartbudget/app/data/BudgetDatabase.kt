@@ -10,9 +10,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [
         Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class,
-        PrilagodbaCiklusa::class, Racun::class, CiljStednje::class,
+        PrilagodbaCiklusa::class, Racun::class, CiljStednje::class, UplataCilja::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
@@ -23,6 +23,7 @@ abstract class BudgetDatabase : RoomDatabase() {
     abstract fun prilagodbe(): PrilagodbaDao
     abstract fun racuni(): RacunDao
     abstract fun ciljevi(): CiljDao
+    abstract fun uplate(): UplataDao
 
     companion object {
         /** Tekući račun, Kartica i Gotovina (dosadašnji načini plaćanja). */
@@ -44,7 +45,7 @@ abstract class BudgetDatabase : RoomDatabase() {
         fun get(context: Context): BudgetDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, BudgetDatabase::class.java, "smartbudget.db")
                 .addCallback(Pocetni)
-                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4)
+                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5)
                 .build()
                 .also { instance = it }
         }
@@ -98,6 +99,21 @@ abstract class BudgetDatabase : RoomDatabase() {
                     "SELECT DISTINCT nacinPlacanja, '#9D4EDD', 'wallet', 0, 10 FROM transakcije " +
                     "WHERE nacinPlacanja NOT IN (SELECT naziv FROM racuni)",
             )
+        }
+    }
+
+    /** v5: povijest uplata na ciljeve i datum postavljanja cilja (tempo štednje). */
+    private object MIGRACIJA_4_5 : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `ciljevi` ADD COLUMN `kreiranEpochDan` INTEGER")
+            db.execSQL("UPDATE `ciljevi` SET `kreiranEpochDan` = ?", arrayOf<Any>(java.time.LocalDate.now().toEpochDay()))
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `uplate_cilja` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ciljId` INTEGER NOT NULL, " +
+                    "`iznosCenti` INTEGER NOT NULL, `epochDan` INTEGER NOT NULL)",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_uplate_cilja_ciljId` ON `uplate_cilja` (`ciljId`)")
+            // Već ušteđeno postaje prva uplata, da povijest odgovara stanju.
+            db.execSQL("INSERT INTO `uplate_cilja` (ciljId, iznosCenti, epochDan) SELECT id, ustedjenoCenti, kreiranEpochDan FROM `ciljevi` WHERE ustedjenoCenti != 0")
         }
     }
 

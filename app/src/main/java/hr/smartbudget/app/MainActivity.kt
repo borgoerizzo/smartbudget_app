@@ -42,6 +42,7 @@ import hr.smartbudget.app.ui.screens.TjedniDijalog
 import hr.smartbudget.app.data.CiljStednje
 import hr.smartbudget.app.data.Racun
 import hr.smartbudget.app.ui.screens.CiljSheet
+import hr.smartbudget.app.ui.screens.UplataCiljaSheet
 import hr.smartbudget.app.ui.screens.PotvrdaBrisanja
 import hr.smartbudget.app.ui.screens.PrijenosSheet
 import hr.smartbudget.app.ui.screens.RacunSheet
@@ -126,6 +127,8 @@ private sealed interface Sheet {
     data class PrijenosInfo(val t: Transakcija) : Sheet
     /** Cilj štednje; null = novi. */
     data class Cilj(val c: CiljStednje?) : Sheet
+    /** Uplata na cilj (ili povlačenje). */
+    data class UplataCilja(val c: CiljStednje, val uplata: Boolean) : Sheet
 }
 
 @Composable
@@ -175,6 +178,8 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
     val racuni by vm.racuni.collectAsState()
     val stanjaRacuna by vm.stanjaRacuna.collectAsState()
     val ciljevi by vm.ciljevi.collectAsState()
+    val uplate by vm.uplate.collectAsState()
+    val visakProslog by vm.visakProslogCiklusa.collectAsState()
     val zadnjiUnosi by vm.zadnjiUnosi.collectAsState()
     val godisnji by vm.godisnji.collectAsState()
     val naziviRacuna = racuni.map { it.naziv }
@@ -216,6 +221,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 ciljevi = ciljevi,
                 onNoviCilj = { sheet = Sheet.Cilj(null) },
                 onUrediCilj = { sheet = Sheet.Cilj(it) },
+                onUplatiCilj = { c, u -> sheet = Sheet.UplataCilja(c, u) },
             )
             Ekran.POSTAVKE -> PostavkeEkran(vm)
         }
@@ -262,7 +268,8 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
             "${s.t.opis} · ${hr.smartbudget.app.domain.Novac.eur(s.t.iznosCenti)}\nBrišu se oba dijela prijenosa.",
             { sheet = null },
         ) { vm.obrisiTransakciju(s.t); sheet = null }
-        is Sheet.Cilj -> CiljSheet(s.c, vm::spremiCilj, vm::obrisiCilj) { sheet = null }
+        is Sheet.Cilj -> CiljSheet(s.c, uplate, vm::spremiCilj, vm::obrisiCilj) { sheet = null }
+        is Sheet.UplataCilja -> UplataCiljaSheet(s.c, s.uplata, visakProslog, { vm.uplatiNaCilj(s.c, it) }) { sheet = null }
         is Sheet.Pregled -> PregledSheet(
             tip = s.tip,
             ciklus = pocetna.ciklus,

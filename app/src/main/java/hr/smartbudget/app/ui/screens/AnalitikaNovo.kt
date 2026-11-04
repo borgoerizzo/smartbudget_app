@@ -181,9 +181,14 @@ fun NavikeKartica(s: AnalitikaStanje) {
         }
         if (prosjeci.max() > 0) {
             val omjer = if (prosjeci[iMin] > 0) prosjeci[iMaks].toDouble() / prosjeci[iMin] else null
+            val najmanje = when {
+                // Gotovo bez troška: omjer bi bio golem i besmislen
+                omjer == null || prosjeci[iMin] < 100 -> "${daniUTjednu[iMin].replaceFirstChar { it.uppercase() }} gotovo ništa ne trošiš."
+                omjer < 1.15 -> "Ostali dani su slični."
+                else -> "${daniUTjednu[iMin].replaceFirstChar { it.uppercase() }} najmanje (${Novac.eur(prosjeci[iMin])}), pa ${daniUTjednu[iMaks]} potrošiš ${"%.1f".format(omjer).replace('.', ',')} puta više."
+            }
             Text(
-                "Najviše trošiš ${daniUTjednu[iMaks]} (prosječno ${Novac.eur(prosjeci[iMaks])}), najmanje ${daniUTjednu[iMin]}" +
-                    (omjer?.let { " · ${"%.1f".format(it).replace('.', ',')}× razlike" } ?: " (često bez troška)") + ".",
+                "Najviše trošiš ${daniUTjednu[iMaks]}: prosječno ${Novac.eur(prosjeci[iMaks])} po danu. $najmanje",
                 color = Neon.TekstSvijetliSiv, fontSize = 13.sp, lineHeight = 18.sp,
             )
         } else {
