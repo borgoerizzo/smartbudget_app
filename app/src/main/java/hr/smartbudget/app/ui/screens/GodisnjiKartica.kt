@@ -42,9 +42,9 @@ import hr.smartbudget.app.ui.theme.hexBoja
 
 /** Godišnji pregled: mjeseci, ukupno, prosjek, najveći troškovi i kategorije za kalendarsku godinu. */
 @Composable
-fun GodisnjiKartica(g: GodisnjiPregled, onGodina: (Int) -> Unit) {
+fun GodisnjiKartica(g: GodisnjiPregled, onGodina: (Int) -> Unit, zaglavlje: @Composable () -> Unit) {
     Kartica(razmak = 14.dp) {
-        Text("Godišnji pregled", style = Tip.naslovKartice)
+        zaglavlje()
         BiracCiklusa(
             "Godina ${g.godina}.",
             onPrethodni = { onGodina(g.godina - 1) },
@@ -101,7 +101,7 @@ fun GodisnjiKartica(g: GodisnjiPregled, onGodina: (Int) -> Unit) {
         if (g.poKategorijama.isNotEmpty()) {
             Text("Rashodi po kategorijama", style = Tip.tijelo.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold))
             Column {
-                g.poKategorijama.take(8).forEach { u ->
+                g.poKategorijama.forEach { u ->
                     Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(10.dp).clip(CircleShape).background(hexBoja(u.kategorija.bojaHex)))
                         Text(u.kategorija.naziv, style = Tip.tijelo.copy(fontSize = 14.sp), modifier = Modifier.weight(1f).padding(horizontal = 10.dp))

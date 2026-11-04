@@ -136,6 +136,10 @@ data class AnalitikaStanje(
     val promjene: List<PromjenaKategorije>,
     val povijest: List<StavkaPovijesti>,
     val brojCiklusa: Int,
+    /** Transakcije zadnjih N ciklusa i to razdoblje (za navike po danima i najčešće nazive). */
+    val transakcijeRazdoblja: List<TransakcijaSKategorijom> = emptyList(),
+    val razdobljeOd: LocalDate = LocalDate.now(),
+    val razdobljeDo: LocalDate = LocalDate.now(),
 )
 
 data class BudzetKategorije(
@@ -291,6 +295,9 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
             promjene = najvecePromjene(sadaLista, prijeLista),
             povijest = povijest(ciklusi, sve),
             brojCiklusa = ciklusi.size,
+            transakcijeRazdoblja = sve,
+            razdobljeOd = ciklusi.first().pocetak,
+            razdobljeDo = minOf(d, ciklusi.last().kraj),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 

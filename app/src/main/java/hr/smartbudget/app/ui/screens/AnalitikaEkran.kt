@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,8 +100,12 @@ fun AnalitikaEkran(
         item { TijekNovcaKartica(s) }
         item { RaspodjelaKartica(s) }
         item { UsporedbaKartica(s) }
-        item { PovijestKartica(s, onBrojCiklusa) }
-        if (godisnji != null) item { GodisnjiKartica(godisnji, onGodina) }
+        item { KrozVrijemeKartica(s, onBrojCiklusa, godisnji, onGodina) }
+        item { KalendarKartica(s) }
+        item { NavikeKartica(s) }
+        item { FiksniKartica(s) }
+        item { StednjaKartica(s) }
+        item { NaziviKartica(s) }
     }
 }
 
@@ -306,28 +311,15 @@ private fun RaspodjelaKartica(s: AnalitikaStanje) {
         var rasirene by remember(s.ciklus) { mutableStateOf(setOf<Long>()) }
         fun prebaci(id: Long) { rasirene = if (id in rasirene) rasirene - id else rasirene + id }
         fun stavke(ids: Set<Long>) = s.transakcije.filter { it.kategorija.id in ids && it.transakcija.tip == TipTransakcije.TROSAK }
+        // Sve kategorije, i one s malim udjelom (bez skupljanja u "Ostalo").
         Column {
-            val prikaz = if (r.size > 6) r.take(5) else r
-            val ostalo = if (r.size > 6) r.drop(5) else emptyList()
-            prikaz.forEachIndexed { i, u ->
+            r.forEachIndexed { i, u ->
                 if (i > 0) HorizontalDivider(color = Color(0x12FFFFFF))
                 val id = u.kategorija.id
                 Box(Modifier.clickable(onClickLabel = "Prikaži stavke") { prebaci(id) }) {
                     RedakLegende(u.kategorija.naziv, hexBoja(u.kategorija.bojaHex), u.centi, u.udio, u.iskoristenost, u.status, rasireno = id in rasirene)
                 }
                 if (id in rasirene) PopisStavkiKategorije(stavke(setOf(id)))
-            }
-            if (ostalo.isNotEmpty()) {
-                HorizontalDivider(color = Color(0x12FFFFFF))
-                val c = ostalo.sumOf { it.centi }
-                val maxIsk = ostalo.mapNotNull { it.iskoristenost }.maxOrNull()
-                Box(Modifier.clickable(onClickLabel = "Prikaži stavke") { prebaci(-1L) }) {
-                    RedakLegende(
-                        "Ostalo (${ostalo.size} kategorije)", Neon.TekstSiv, c, ostalo.sumOf { it.udio }, maxIsk,
-                        ostalo.maxOfOrNull { it.status } ?: StatusLimita.BEZ_LIMITA, najvise = true, rasireno = -1L in rasirene,
-                    )
-                }
-                if (-1L in rasirene) PopisStavkiKategorije(stavke(ostalo.map { it.kategorija.id }.toSet()))
             }
         }
     }
@@ -448,13 +440,30 @@ private fun PlocicaUsporedbe(naziv: String, sada: Long, prije: Long, rastJeDobar
 }
 
 @Composable
-private fun PovijestKartica(s: AnalitikaStanje, onBrojCiklusa: (Int) -> Unit) {
-    Kartica(razmak = 16.dp) {
+private fun KrozVrijemeKartica(s: AnalitikaStanje, onBrojCiklusa: (Int) -> Unit, godisnji: GodisnjiPregled?, onGodina: (Int) -> Unit) {
+    // Jedna kartica umjesto dvije koje su se preklapale: ciklusi (6/12) ili kalendarska godina.
+    var godina by rememberSaveable { mutableStateOf(false) }
+    val zaglavlje: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("Prihodi i rashodi kroz vrijeme", style = Tip.naslovKartice)
-            Text("Zadnjih ${s.brojCiklusa} ciklusa, zaključno s odabranim", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+            Text(
+                if (godina) "Kalendarska godina po mjesecima" else "Zadnjih ${s.brojCiklusa} ciklusa, zaključno s odabranim",
+                style = Tip.oznaka.copy(fontWeight = FontWeight.Normal),
+            )
         }
-        Segmenti(listOf("6 ciklusa", "12 ciklusa"), if (s.brojCiklusa == 6) 0 else 1, { onBrojCiklusa(if (it == 0) 6 else 12) })
+        Segmenti(
+            listOf("6 ciklusa", "12 ciklusa", "Godina"),
+            if (godina) 2 else if (s.brojCiklusa == 6) 0 else 1,
+            { i -> if (i == 2) godina = true else { godina = false; onBrojCiklusa(if (i == 0) 6 else 12) } },
+        )
+    }
+    if (godina && godisnji != null) GodisnjiKartica(godisnji, onGodina, zaglavlje) else PovijestKartica(s, zaglavlje)
+}
+
+@Composable
+private fun PovijestKartica(s: AnalitikaStanje, zaglavlje: @Composable () -> Unit) {
+    Kartica(razmak = 16.dp) {
+        zaglavlje()
         val p = s.povijest
         val maks = p.maxOfOrNull { maxOf(it.zbroj.prihodi, it.zbroj.troskovi) }?.coerceAtLeast(1) ?: 1
         val labelPaint = remember { android.graphics.Paint().apply { isAntiAlias = true; color = Neon.TekstSiv.toArgb() } }
