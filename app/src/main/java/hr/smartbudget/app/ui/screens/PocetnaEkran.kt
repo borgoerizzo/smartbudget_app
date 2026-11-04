@@ -171,7 +171,20 @@ fun PocetnaEkran(
             }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Transakcije", style = Tip.naslov)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Transakcije", style = Tip.naslov, modifier = Modifier.weight(1f))
+                        // Jedan gumb: dok je ijedan dan raširen skuplja sve, inače sve raširi.
+                        if (s.grupe.size > 1) {
+                            val sviDani = s.grupe.map { it.datum.toEpochDay() }.toSet()
+                            val skupi = sviDani.any { it !in skupljeni }
+                            KruzniGumb(
+                                if (skupi) "skupiSve" else "rasiriSve",
+                                if (skupi) "Skupi sve dane" else "Raširi sve dane",
+                                { skupljeni = if (skupi) skupljeni + sviDani else skupljeni - sviDani },
+                                velicina = 36.dp,
+                            )
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterTransakcija.entries.forEach { f ->
                             val boja = when (f) {

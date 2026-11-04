@@ -47,6 +47,8 @@ object Ikone {
         "calendar" to "M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4",
         "chevDown" to "M6 9l6 6 6-6",
         "chevUp" to "M6 15l6-6 6 6",
+        "rasiriSve" to "M7 6l5 5 5-5 M7 13l5 5 5-5",
+        "skupiSve" to "M7 11l5-5 5 5 M7 18l5-5 5 5",
         "chevLeft" to "M15 6l-6 6 6 6",
         "chevRight" to "M9 6l6 6-6 6",
         "edit" to "M4 20l1-4 11-11 3 3L8 19z M14 7l3 3",
