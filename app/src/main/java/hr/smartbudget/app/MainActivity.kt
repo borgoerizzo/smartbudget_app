@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         PonavljajuciWorker.zakazi(this)
+        hr.smartbudget.app.data.Alarmi.obnovi(this)
         // Otvoreno dodirom na obavijest: prozor s objašnjenjem (nakon otključavanja, ako je zaključano)
         Obavijesti.izNamjere(intent)
         setContent {

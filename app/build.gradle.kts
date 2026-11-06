@@ -16,7 +16,7 @@ android {
         minSdk = 26
         targetSdk = 37
         // Verzija: +0.1 za novu funkcionalnost ili veći ispravak, +0.001 za manju korekciju.
-        versionName = "2.202"
+        versionName = "2.300"
         // Iz naziva, tako da svaka nova verzija raste i za Android (1.000 → 1000, 1.101 → 1101).
         versionCode = versionName!!.split('.').let { (a, b) -> a.toInt() * 1000 + b.toInt() }
 

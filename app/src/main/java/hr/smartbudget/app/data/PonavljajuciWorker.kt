@@ -41,37 +41,11 @@ class PonavljajuciWorker(context: Context, params: WorkerParameters) : Coroutine
     }
 
     companion object {
-        /** Dnevni podsjetnik u odabrano vrijeme (ili otkazivanje ako je isključen). */
-        fun zakaziPodsjetnik(context: Context) {
-            val p = AppPostavke.get(context).stanje.value
-            val wm = WorkManager.getInstance(context)
-            if (!p.podsjetnik) { wm.cancelUniqueWork("podsjetnik"); return }
-            val sada = java.time.LocalDateTime.now()
-            var sljedeci = sada.toLocalDate().atTime(p.podsjetnikMinuta / 60, p.podsjetnikMinuta % 60)
-            if (!sljedeci.isAfter(sada)) sljedeci = sljedeci.plusDays(1)
-            val odgoda = java.time.Duration.between(sada, sljedeci).toMinutes()
-            wm.enqueueUniquePeriodicWork(
-                "podsjetnik",
-                ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequestBuilder<PodsjetnikWorker>(1, TimeUnit.DAYS).setInitialDelay(odgoda, TimeUnit.MINUTES).build(),
-            )
-        }
+        /** Dnevni podsjetnik u odabrano vrijeme (ili otkazivanje ako je isključen); vidi [Alarmi]. */
+        fun zakaziPodsjetnik(context: Context) = Alarmi.zakaziPodsjetnik(context)
 
-        /** Tjedni pregled na odabrani dan u tjednu i vrijeme (ili otkazivanje). */
-        fun zakaziTjedni(context: Context) {
-            val p = AppPostavke.get(context).stanje.value
-            val wm = WorkManager.getInstance(context)
-            if (!p.tjedni) { wm.cancelUniqueWork("tjedni"); return }
-            val sada = java.time.LocalDateTime.now()
-            var sljedeci = sada.toLocalDate().atTime(p.tjedniMinuta / 60, p.tjedniMinuta % 60)
-            while (sljedeci.dayOfWeek.value != p.tjedniDan || !sljedeci.isAfter(sada)) sljedeci = sljedeci.plusDays(1)
-            val odgoda = java.time.Duration.between(sada, sljedeci).toMinutes()
-            wm.enqueueUniquePeriodicWork(
-                "tjedni",
-                ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequestBuilder<TjedniWorker>(7, TimeUnit.DAYS).setInitialDelay(odgoda, TimeUnit.MINUTES).build(),
-            )
-        }
+        /** Tjedni pregled na odabrani dan u tjednu i vrijeme (ili otkazivanje); vidi [Alarmi]. */
+        fun zakaziTjedni(context: Context) = Alarmi.zakaziTjedni(context)
 
         fun zakazi(context: Context) {
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(

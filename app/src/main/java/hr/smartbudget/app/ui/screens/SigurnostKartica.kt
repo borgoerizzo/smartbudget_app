@@ -231,6 +231,29 @@ fun ObavijestiKartica(vm: BudgetViewModel) {
                 Text("%02d:%02d".format(p.podsjetnikMinuta / 60, p.podsjetnikMinuta % 60), color = Neon.Cijan, fontWeight = FontWeight.Bold)
             }
         }
+        // Bez dopuštenja za točne alarme Android smije podsjetnik odgoditi do sat vremena.
+        var tocno by remember { mutableStateOf(hr.smartbudget.app.data.Alarmi.mozeTocno(ctx)) }
+        androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+            tocno = hr.smartbudget.app.data.Alarmi.mozeTocno(ctx)
+            if (tocno) hr.smartbudget.app.data.Alarmi.obnovi(ctx)
+            onPauseOrDispose { }
+        }
+        if ((p.podsjetnik || p.tjedni) && !tocno && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Button) {
+                    ctx.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:" + ctx.packageName)),
+                    )
+                }.padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Obavijesti u točno vrijeme", style = Tip.tijelo.copy(fontSize = 14.sp))
+                    Text("Dopusti \"Alarmi i podsjetnici\", inače mogu kasniti do sat vremena", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+                }
+                Text("Dopusti", color = Neon.Jantar, fontWeight = FontWeight.Bold)
+            }
+        }
         RedakPrekidac(
             "calendar", Neon.Zelena, "Tjedni pregled",
             if (p.tjedni) "${daniPuni[p.tjedniDan - 1]} u %02d:%02d · rekapitulacija zadnjih 7 dana".format(p.tjedniMinuta / 60, p.tjedniMinuta % 60)
