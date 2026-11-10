@@ -25,6 +25,8 @@ data class StanjePostavki(
     /** Dan tjednog pregleda: 1 = ponedjeljak … 7 = nedjelja. */
     val tjedniDan: Int = 7,
     val tjedniMinuta: Int = 19 * 60,
+    /** Račun koji je unaprijed odabran pri novom unosu; null = Kartica. */
+    val zadaniRacun: String? = null,
 )
 
 class AppPostavke private constructor(context: Context) {
@@ -48,6 +50,7 @@ class AppPostavke private constructor(context: Context) {
         tjedni = prefs.getBoolean("tjedni", false),
         tjedniDan = prefs.getInt("tjedniDan", 7),
         tjedniMinuta = prefs.getInt("tjedniMinuta", 19 * 60),
+        zadaniRacun = prefs.getString("zadaniRacun", null),
     )
 
     private fun postavi(kljuc: String, v: Boolean) { prefs.edit().putBoolean(kljuc, v).apply(); _stanje.value = ucitaj() }
@@ -63,6 +66,7 @@ class AppPostavke private constructor(context: Context) {
     fun postaviTjedni(v: Boolean) = postavi("tjedni", v)
     fun postaviTjedniDan(d: Int) { prefs.edit().putInt("tjedniDan", d).apply(); _stanje.value = ucitaj() }
     fun postaviTjedniMinuta(m: Int) { prefs.edit().putInt("tjedniMinuta", m).apply(); _stanje.value = ucitaj() }
+    fun postaviZadaniRacun(naziv: String) { prefs.edit().putString("zadaniRacun", naziv).apply(); _stanje.value = ucitaj() }
     fun postaviPodsjetnikMinuta(m: Int) { prefs.edit().putInt("podsjetnikMinuta", m).apply(); _stanje.value = ucitaj() }
 
     /** Prognoza se javlja jednom po kategoriji u ciklusu. */

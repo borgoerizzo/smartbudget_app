@@ -305,7 +305,9 @@ fun TransakcijaSheet(
     var kategorijaId by remember { mutableStateOf(pravilo?.kategorijaId ?: postojeca?.kategorijaId) }
     var opis by remember { mutableStateOf(pravilo?.opis ?: postojeca?.opis ?: "") }
     var nacin by remember {
-        mutableStateOf(pravilo?.nacinPlacanja ?: postojeca?.nacinPlacanja ?: racuni.firstOrNull { it == NacinPlacanja.KARTICA } ?: racuni.firstOrNull() ?: NacinPlacanja.KARTICA)
+        // Novi unos: zadani račun iz Postavki, inače Kartica.
+        val zadani = hr.smartbudget.app.data.AppPostavke.get(ctx).stanje.value.zadaniRacun?.takeIf { it in racuni }
+        mutableStateOf(pravilo?.nacinPlacanja ?: postojeca?.nacinPlacanja ?: zadani ?: racuni.firstOrNull { it == NacinPlacanja.KARTICA } ?: racuni.firstOrNull() ?: NacinPlacanja.KARTICA)
     }
     var slika by remember { mutableStateOf(postojeca?.slika) }
     var dijeli by remember { mutableStateOf(false) }
@@ -393,7 +395,7 @@ fun TransakcijaSheet(
                 opis, { opis = it; prijedlogOdabran = false }, Modifier.fillMaxWidth(),
                 placeholder = if (tip == TipTransakcije.PRIHOD) "npr. Plaća za listopad" else "npr. Tjedna nabava",
             )
-            // Prijedlozi iz prethodnih unosa: naziv, kategorija, račun i iznos jednim dodirom.
+            // Prijedlozi iz prethodnih unosa: naziv i kategorija jednim dodirom (iznos je svaki put drugačiji).
             val prijedlozi = if (prijedlogOdabran) emptyList() else prijedloziZaNaziv(zadnjiUnosi, opis, tip)
             if (prijedlozi.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -405,8 +407,6 @@ fun TransakcijaSheet(
                                 .clickable(onClickLabel = "Koristi prijedlog") {
                                     opis = pr.transakcija.opis
                                     kategorijaId = pr.kategorija.id
-                                    if (pr.transakcija.nacinPlacanja in racuni) nacin = pr.transakcija.nacinPlacanja
-                                    if (iznos.isBlank()) iznos = Novac.broj(pr.transakcija.iznosCenti)
                                     prijedlogOdabran = true
                                 }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -414,7 +414,7 @@ fun TransakcijaSheet(
                         ) {
                             Icon(Ikone.ikona(pr.kategorija.ikonaNaziv), null, Modifier.size(14.dp), tint = hexBoja(pr.kategorija.bojaHex).svjetlija())
                             Text(
-                                " ${pr.transakcija.opis} · ${Novac.eur(pr.transakcija.iznosCenti)}",
+                                " ${pr.transakcija.opis}",
                                 color = Neon.TekstSvijetliSiv, fontSize = 12.sp, maxLines = 1,
                             )
                         }

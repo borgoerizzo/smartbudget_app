@@ -147,6 +147,26 @@ fun PostavkeEkran(vm: BudgetViewModel) {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { Text("Postavke", style = Tip.naslovVeliki) }
+        item { NaslovGrupe("Unos") }
+        item {
+            val racuni by vm.racuni.collectAsState()
+            val appPostavke = hr.smartbudget.app.data.AppPostavke.get(androidx.compose.ui.platform.LocalContext.current)
+            val ap by appPostavke.stanje.collectAsState()
+            val nazivi = racuni.map { it.naziv }
+            val zadani = ap.zadaniRacun?.takeIf { it in nazivi } ?: nazivi.firstOrNull { it == "Kartica" } ?: nazivi.firstOrNull()
+            Kartica(razmak = 12.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PlocicaIkone(Ikone.ui("wallet"), Neon.Cijan)
+                    Column {
+                        Text("Zadani račun", style = Tip.naslovKartice)
+                        Text("Unaprijed odabran pri svakom novom unosu", style = Tip.malo)
+                    }
+                }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    nazivi.forEach { n -> NeonChip(n, n == zadani, { appPostavke.postaviZadaniRacun(n) }, boja = Neon.Cijan) }
+                }
+            }
+        }
         item { NaslovGrupe("Podaci") }
         item {
             Kartica(razmak = 16.dp) {
