@@ -74,6 +74,7 @@ data class PocetnaStanje(
     val ukupnoStanje: Long,
     /** Minus s kraja prethodnog ciklusa koji se prenosi u ovaj (≤ 0); pozitivan ostatak se ne prenosi. */
     val prijenos: Long,
+    /** Prosječni dnevni promjenjivi rashod (bez ponavljajućih unosa). */
     val dnevniProsjek: Long,
     val filter: FilterTransakcija,
     /** Tekst pretrage (prazno = bez pretrage). */
@@ -115,9 +116,9 @@ data class PocetnaStanje(
             if (r <= 0) return "Rashodi su premašili prihode ciklusa za ${Novac.eur(-r)}." to true
             val dostaje = (r / dnevniProsjek).toInt()
             return if (dostaje < preostaloDana) {
-                "Pri tempu od ${Novac.eur(dnevniProsjek)}/dan sredstva dostaju za $dostaje od $preostaloDana preostalih dana." to true
+                "Uz fiksne troškove već plaćene i tempo od ${Novac.eur(dnevniProsjek)}/dan, sredstva dostaju za $dostaje od $preostaloDana preostalih dana." to true
             } else {
-                "Pri tempu od ${Novac.eur(dnevniProsjek)}/dan sredstva dostaju do kraja ciklusa." to false
+                "Uz tempo od ${Novac.eur(dnevniProsjek)}/dan (bez fiksnih troškova) sredstva dostaju do kraja ciklusa." to false
             }
         }
 }
@@ -261,7 +262,11 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
             zbroj = z,
             ukupnoStanje = stanje,
             prijenos = prijenos,
-            dnevniProsjek = if (proteklo > 0) z.troskovi / proteklo else 0,
+            // Bez fiksnih (ponavljajućih) troškova: oni dolaze jednom u ciklusu i iskrivili bi dnevni tempo,
+            // osobito prvih dana. Neto stanje ih već uključuje.
+            dnevniProsjek = if (proteklo > 0) lista.filter {
+                it.jeStvarna && it.transakcija.tip == TipTransakcije.TROSAK && it.transakcija.ponavljajuciId == null
+            }.sumOf { it.transakcija.iznosCenti } / proteklo else 0,
             filter = f,
             pretraga = q,
             pretragaSvi = svi,

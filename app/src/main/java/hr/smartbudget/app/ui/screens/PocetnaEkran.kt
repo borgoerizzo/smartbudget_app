@@ -470,7 +470,7 @@ private fun HeroKartica(s: PocetnaStanje, privatnost: StanjePostavki, onPregled:
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             MalaMetrika("Stanje računa", if (sakrijStanje) AppPostavke.SKRIVENO else Novac.stanje(s.ukupnoStanje), if (s.ukupnoStanje >= 0) Neon.Tekst else Neon.Crvena, Modifier.weight(1f))
-            MalaMetrika("Dnevni prosjek", Novac.eur(s.dnevniProsjek) + "/dan", Neon.Tekst, Modifier.weight(1f))
+            MalaMetrika("Dnevno, bez fiksnih", Novac.eur(s.dnevniProsjek) + "/dan", Neon.Tekst, Modifier.weight(1f))
         }
         s.tempo?.let { (tekstSIznosom, upozorenje) ->
             val tekst = if (sakrijStanje) s.tempoBezIznosa ?: tekstSIznosom else tekstSIznosom
