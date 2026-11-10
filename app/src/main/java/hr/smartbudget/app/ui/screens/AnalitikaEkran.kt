@@ -1,5 +1,6 @@
 package hr.smartbudget.app.ui.screens
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -368,10 +369,15 @@ private fun UsporedbaKartica(s: AnalitikaStanje) {
             Text("Usporedba s prošlim ciklusom", style = Tip.naslovKartice)
             Text("Do istog dana ciklusa (dan ${s.danUCiklusu})", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PlocicaUsporedbe("Prihodi", s.sadaDoDana.prihodi, s.prijeDoDana.prihodi, rastJeDobar = true, Modifier.weight(1f))
-            PlocicaUsporedbe("Rashodi", s.sadaDoDana.troskovi, s.prijeDoDana.troskovi, rastJeDobar = false, Modifier.weight(1f))
-            PlocicaUsporedbe("Neto", s.sadaDoDana.razlika, s.prijeDoDana.razlika, rastJeDobar = true, Modifier.weight(1f))
+        // Jedan redak po stavci (umjesto tri uske pločice u kojima su se postotak i iznosi lomili).
+        Column(
+            Modifier.clip(RoundedCornerShape(16.dp)).background(Neon.Ispuna).border(1.dp, Neon.RubSlab, RoundedCornerShape(16.dp)),
+        ) {
+            RedakUsporedbe("Prihodi", s.sadaDoDana.prihodi, s.prijeDoDana.prihodi, rastJeDobar = true)
+            HorizontalDivider(color = Neon.RubSlab)
+            RedakUsporedbe("Rashodi", s.sadaDoDana.troskovi, s.prijeDoDana.troskovi, rastJeDobar = false)
+            HorizontalDivider(color = Neon.RubSlab)
+            RedakUsporedbe("Neto", s.sadaDoDana.razlika, s.prijeDoDana.razlika, rastJeDobar = true)
         }
         if (s.promjene.isNotEmpty()) {
             Column {
@@ -413,29 +419,33 @@ private fun TrakaUsporedbe(udio: Float, boja: Color, tekst: String, istaknuto: B
 }
 
 @Composable
-private fun PlocicaUsporedbe(naziv: String, sada: Long, prije: Long, rastJeDobar: Boolean, modifier: Modifier) {
+private fun RedakUsporedbe(naziv: String, sada: Long, prije: Long, rastJeDobar: Boolean) {
     val promjena = if (prije != 0L) (sada - prije) * 100.0 / abs(prije) else null
     val dobro = if (rastJeDobar) sada >= prije else sada <= prije
-    val boja = if (dobro) Neon.Zelena else Neon.Crvena
-    Column(
-        modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(Neon.Ispuna)
-            .border(1.dp, Neon.RubSlab, RoundedCornerShape(16.dp))
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(naziv, style = Tip.oznaka)
-        Text(Novac.stanje(sada), style = Tip.iznos.copy(fontSize = 14.sp), color = Neon.Tekst, maxLines = 1)
+    val boja = when {
+        promjena == null || sada == prije -> Neon.TekstSiv
+        dobro -> Neon.Zelena
+        else -> Neon.Crvena
+    }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(naziv, style = Tip.tijelo.copy(fontSize = 14.sp), modifier = Modifier.weight(1f), maxLines = 1)
+                Text(Novac.stanje(sada), style = Tip.iznos.copy(fontSize = 15.sp), color = Neon.Tekst, maxLines = 1, softWrap = false)
+            }
+            Text("prošli ciklus: ${Novac.stanje(prije)}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal), maxLines = 1)
+        }
+        Spacer(Modifier.width(10.dp))
         Oznaka(
             when {
                 promjena == null -> "—"
-                promjena >= 0 -> "▲ ${Novac.postotak(promjena)}"
+                sada == prije -> "= 0 %"
+                promjena > 0 -> "▲ ${Novac.postotak(promjena)}"
                 else -> "▼ ${Novac.postotak(-promjena)}"
             },
-            if (promjena == null) Neon.TekstSiv else boja,
+            boja,
+            Modifier.widthIn(min = 76.dp),
         )
-        Text("prošli ${Novac.broj(prije)}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal), maxLines = 1)
     }
 }
 
