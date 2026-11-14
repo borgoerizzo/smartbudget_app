@@ -305,8 +305,9 @@ fun TransakcijaSheet(
     var kategorijaId by remember { mutableStateOf(pravilo?.kategorijaId ?: postojeca?.kategorijaId) }
     var opis by remember { mutableStateOf(pravilo?.opis ?: postojeca?.opis ?: "") }
     var nacin by remember {
-        // Novi unos: zadani račun iz Postavki, inače Kartica.
-        val zadani = hr.smartbudget.app.data.AppPostavke.get(ctx).stanje.value.zadaniRacun?.takeIf { it in racuni }
+        // Novi unos (trošak i prihod): zadani račun iz Postavki, inače Kartica.
+        // Popis računa na brzom unosu s widgeta u prvom trenutku još je prazan, pa se tada ne provjerava.
+        val zadani = hr.smartbudget.app.data.AppPostavke.get(ctx).stanje.value.zadaniRacun?.takeIf { racuni.isEmpty() || it in racuni }
         mutableStateOf(pravilo?.nacinPlacanja ?: postojeca?.nacinPlacanja ?: zadani ?: racuni.firstOrNull { it == NacinPlacanja.KARTICA } ?: racuni.firstOrNull() ?: NacinPlacanja.KARTICA)
     }
     var slika by remember { mutableStateOf(postojeca?.slika) }
