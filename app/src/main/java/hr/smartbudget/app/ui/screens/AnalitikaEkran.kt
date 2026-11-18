@@ -1,5 +1,6 @@
 package hr.smartbudget.app.ui.screens
 
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -93,6 +94,9 @@ fun AnalitikaEkran(
     imaKripta: Boolean = false,
     kripto: @Composable () -> Unit = {},
 ) {
+    val appPostavke = hr.smartbudget.app.data.AppPostavke.get(androidx.compose.ui.platform.LocalContext.current)
+    val postavke by appPostavke.stanje.collectAsState()
+    var uredujem by remember { mutableStateOf(false) }
     LazyColumn(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 132.dp),
@@ -100,25 +104,56 @@ fun AnalitikaEkran(
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Analitika", style = Tip.naslovVeliki)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Analitika", style = Tip.naslovVeliki, modifier = Modifier.weight(1f))
+                    GumbRasporeda { uredujem = true }
+                }
                 if (s != null) BiracCiklusa(HrDatum.raspon(s.ciklus), onPrethodni, onSljedeci, onTrenutni, Modifier.fillMaxWidth())
             }
         }
         if (s == null) return@LazyColumn
-        item { TijekNovcaKartica(s) }
-        item { RaspodjelaKartica(s) }
-        item { UsporedbaKartica(s) }
-        item { KrozVrijemeKartica(s, onBrojCiklusa, godisnji, onGodina) }
-        item { KalendarKartica(s) }
-        item { NavikeKartica(s) }
-        item { FiksniKartica(s) }
-        item { StednjaKartica(s) }
-        item { NaziviKartica(s) }
-        if (imaCiljeva) item { ciljevi() }
-        if (imaStednje) item { stednja() }
-        if (imaKripta) item { kripto() }
+        val skrivene = postavke.skrivene["analitika"].orEmpty()
+        poredaj(KARTICE_ANALITIKE, postavke.rasporedi["analitika"].orEmpty()).filter { it.kljuc !in skrivene }.forEach { k ->
+            when (k.kljuc) {
+                "tijek" -> item(k.kljuc) { TijekNovcaKartica(s) }
+                "raspodjela" -> item(k.kljuc) { RaspodjelaKartica(s) }
+                "usporedba" -> item(k.kljuc) { UsporedbaKartica(s) }
+                "krozVrijeme" -> item(k.kljuc) { KrozVrijemeKartica(s, onBrojCiklusa, godisnji, onGodina) }
+                "kalendar" -> item(k.kljuc) { KalendarKartica(s) }
+                "navike" -> item(k.kljuc) { NavikeKartica(s) }
+                "fiksni" -> item(k.kljuc) { FiksniKartica(s) }
+                "stopa" -> item(k.kljuc) { StednjaKartica(s) }
+                "nazivi" -> item(k.kljuc) { NaziviKartica(s) }
+                "ciljevi" -> if (imaCiljeva) item(k.kljuc) { ciljevi() }
+                "stednja" -> if (imaStednje) item(k.kljuc) { stednja() }
+                "kripto" -> if (imaKripta) item(k.kljuc) { kripto() }
+            }
+        }
+    }
+    if (uredujem) {
+        UrediRasporedSheet(
+            "Prilagodi analitiku", KARTICE_ANALITIKE,
+            postavke.rasporedi["analitika"].orEmpty(), postavke.skrivene["analitika"].orEmpty(),
+            { r, sk -> appPostavke.postaviRaspored("analitika", r, sk) },
+            { appPostavke.vratiZadaniRaspored("analitika") },
+        ) { uredujem = false }
     }
 }
+
+val KARTICE_ANALITIKE = listOf(
+    StavkaRasporeda("tijek", "Kumulativni tok novca"),
+    StavkaRasporeda("raspodjela", "Rashodi po kategorijama"),
+    StavkaRasporeda("usporedba", "Usporedba s prošlim ciklusom"),
+    StavkaRasporeda("krozVrijeme", "Prihodi i rashodi kroz vrijeme"),
+    StavkaRasporeda("kalendar", "Kalendar potrošnje"),
+    StavkaRasporeda("navike", "Navike po danima u tjednu"),
+    StavkaRasporeda("fiksni", "Fiksni i promjenjivi troškovi"),
+    StavkaRasporeda("stopa", "Stopa štednje"),
+    StavkaRasporeda("nazivi", "Gdje najčešće trošiš"),
+    StavkaRasporeda("ciljevi", "Ciljevi štednje", "kad postoji cilj"),
+    StavkaRasporeda("stednja", "Štednja", "kad postoji štednja"),
+    StavkaRasporeda("kripto", "Kriptovalute", "kad postoji kripto novčanik"),
+)
 
 private val bojaNeto = Neon.LjubicastaSvijetla
 

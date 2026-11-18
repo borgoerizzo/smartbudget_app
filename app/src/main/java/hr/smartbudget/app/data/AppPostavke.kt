@@ -29,6 +29,13 @@ data class StanjePostavki(
     val zadaniRacun: String? = null,
     /** Osnovna valuta aplikacije (kod, npr. EUR, CHF). */
     val valuta: String = "EUR",
+    /** Što zaključavanje štiti: SVE (cijela aplikacija), CIKLUS ili STEDNJA. */
+    val opsegZakljucavanja: String = "SVE",
+    /** Iznosi štednje skriveni (neovisno o skrivanju stanja računa). */
+    val sakrijStednju: Boolean = false,
+    /** Raspored kartica po zaslonu ("analitika", "budzeti"): redoslijed ključeva i skrivene kartice. */
+    val rasporedi: Map<String, List<String>> = emptyMap(),
+    val skrivene: Map<String, Set<String>> = emptyMap(),
 )
 
 class AppPostavke private constructor(context: Context) {
@@ -54,6 +61,10 @@ class AppPostavke private constructor(context: Context) {
         tjedniMinuta = prefs.getInt("tjedniMinuta", 19 * 60),
         zadaniRacun = prefs.getString("zadaniRacun", null),
         valuta = prefs.getString("valuta", "EUR") ?: "EUR",
+        opsegZakljucavanja = prefs.getString("opsegZakljucavanja", "SVE") ?: "SVE",
+        sakrijStednju = prefs.getBoolean("sakrijStednju", false),
+        rasporedi = ZASLONI.associateWith { z -> prefs.getString("raspored_$z", null)?.split(',')?.filter { it.isNotBlank() } ?: emptyList() },
+        skrivene = ZASLONI.associateWith { z -> prefs.getStringSet("skrivene_$z", emptySet())!!.toSet() },
     ).also { primijeniValutu(it.valuta) }
 
     private fun primijeniValutu(kod: String) {
@@ -68,6 +79,8 @@ class AppPostavke private constructor(context: Context) {
     fun postaviBiometriju(v: Boolean) = postavi("biometrija", v)
     fun postaviSakrijStanje(v: Boolean) = postavi("sakrijStanje", v)
     fun postaviSakrijPrihod(v: Boolean) = postavi("sakrijPrihod", v)
+    fun postaviSakrijStednju(v: Boolean) = postavi("sakrijStednju", v)
+    fun postaviOpsegZakljucavanja(o: String) { prefs.edit().putString("opsegZakljucavanja", o).apply(); _stanje.value = ucitaj() }
     fun postaviObavijestPonavljajuci(v: Boolean) = postavi("obavijestPonavljajuci", v)
     fun postaviObavijestMinus(v: Boolean) = postavi("obavijestMinus", v)
     fun postaviObavijestPrognoza(v: Boolean) = postavi("obavijestPrognoza", v)
@@ -75,6 +88,16 @@ class AppPostavke private constructor(context: Context) {
     fun postaviTjedni(v: Boolean) = postavi("tjedni", v)
     fun postaviTjedniDan(d: Int) { prefs.edit().putInt("tjedniDan", d).apply(); _stanje.value = ucitaj() }
     fun postaviTjedniMinuta(m: Int) { prefs.edit().putInt("tjedniMinuta", m).apply(); _stanje.value = ucitaj() }
+    fun postaviRaspored(zaslon: String, redoslijed: List<String>, skrivene: Set<String>) {
+        prefs.edit().putString("raspored_$zaslon", redoslijed.joinToString(",")).putStringSet("skrivene_$zaslon", skrivene).apply()
+        _stanje.value = ucitaj()
+    }
+
+    fun vratiZadaniRaspored(zaslon: String) {
+        prefs.edit().remove("raspored_$zaslon").remove("skrivene_$zaslon").apply()
+        _stanje.value = ucitaj()
+    }
+
     fun postaviValutu(kod: String) { prefs.edit().putString("valuta", kod).apply(); _stanje.value = ucitaj() }
     fun postaviZadaniRacun(naziv: String) { prefs.edit().putString("zadaniRacun", naziv).apply(); _stanje.value = ucitaj() }
     fun postaviPodsjetnikMinuta(m: Int) { prefs.edit().putInt("podsjetnikMinuta", m).apply(); _stanje.value = ucitaj() }
@@ -120,6 +143,7 @@ class AppPostavke private constructor(context: Context) {
         }
 
         /** Prikaz skrivenog iznosa. */
+        val ZASLONI = listOf("analitika", "budzeti")
         val SKRIVENO: String get() = "•••• " + hr.smartbudget.app.domain.Novac.simbol
     }
 }

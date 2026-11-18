@@ -120,12 +120,25 @@ fun SigurnostKartica() {
         Text("Sigurnost i privatnost", style = Tip.naslovKartice, modifier = Modifier.padding(bottom = 6.dp))
         RedakPrekidac(
             "lock", Neon.Zelena, "Zaključavanje aplikacije",
-            if (p.zakljucavanje) "Biometrija ili PIN pri otvaranju" else "Isključeno",
+            if (!p.zakljucavanje) "Isključeno" else when (p.opsegZakljucavanja) {
+                "CIKLUS" -> "Biometrija ili PIN za ciklus (Početna, Analitika, Budžeti)"
+                "STEDNJA" -> "Biometrija ili PIN za štednju"
+                else -> "Biometrija ili PIN pri otvaranju"
+            },
             p.zakljucavanje,
         ) { ukljuci ->
             if (ukljuci && !p.imaPin) postavljamPin = true else postavke.postaviZakljucavanje(ukljuci)
         }
         if (p.zakljucavanje) {
+            Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Što zaključati", style = Tip.oznaka)
+                val opsezi = listOf("SVE", "CIKLUS", "STEDNJA")
+                Segmenti(
+                    listOf("Cijela aplikacija", "Samo ciklus", "Samo štednja"),
+                    opsezi.indexOf(p.opsegZakljucavanja).coerceAtLeast(0),
+                    { postavke.postaviOpsegZakljucavanja(opsezi[it]); hr.smartbudget.app.ui.Dijelovi.otkljucano.value = emptySet() },
+                )
+            }
             RedakPrekidac(
                 "fingerprint", Neon.Cijan, "Otisak prsta ili lice",
                 if (bioDostupna) "Ako ne uspije, otključava se PIN-om" else "Nije dostupno na ovom uređaju (koristi se PIN)",
@@ -150,7 +163,7 @@ fun SigurnostKartica() {
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(Neon.RubSlab))
         RedakPrekidac(
-            "eyeOff", Neon.LjubicastaSvijetla, "Sakrij stanje",
+            "eyeOff", Neon.LjubicastaSvijetla, "Sakrij stanje računa",
             "Stanje i neto na Početnoj i widgetu kao •••• (dodir otkriva)",
             p.sakrijStanje,
         ) { postavke.postaviSakrijStanje(it); osvjeziWidget() }
@@ -159,6 +172,11 @@ fun SigurnostKartica() {
             "Iznosi prihoda na Početnoj i widgetu kao ••••",
             p.sakrijPrihod,
         ) { postavke.postaviSakrijPrihod(it); osvjeziWidget() }
+        RedakPrekidac(
+            "eyeOff", Neon.Cijan, "Sakrij štednju",
+            "Iznosi ciljeva, novčanika i analitike štednje skriveni (dodir otkriva)",
+            p.sakrijStednju,
+        ) { postavke.postaviSakrijStednju(it); hr.smartbudget.app.ui.Dijelovi.stednjaOtkrivena.value = false }
     }
 
     postavljamPin?.let { ukljuci ->

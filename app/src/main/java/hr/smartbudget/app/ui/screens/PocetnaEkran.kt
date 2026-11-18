@@ -123,8 +123,15 @@ fun PocetnaEkran(
     onRacun: (Racun) -> Unit,
     onNoviRacun: () -> Unit,
     onPrijenos: () -> Unit,
+    /** Sadržaj taba "Štednja" (ciljevi i štednja u valutama). */
+    stednja: @Composable () -> Unit = {},
 ) {
     val privatnost by AppPostavke.get(LocalContext.current).stanje.collectAsState()
+    // 0 = ciklus prihoda i potrošnje, 1 = štednja
+    var tab by rememberSaveable { mutableStateOf(0) }
+    val otkljucani by hr.smartbudget.app.ui.Dijelovi.otkljucano
+    val ciklusZakljucan = privatnost.zakljucavanje && privatnost.imaPin && privatnost.opsegZakljucavanja == hr.smartbudget.app.ui.Dijelovi.CIKLUS &&
+        hr.smartbudget.app.ui.Dijelovi.CIKLUS !in otkljucani
     var biramRaspon by remember { mutableStateOf(false) }
     if (biramRaspon) {
         RasponCiklusaDijalog(
@@ -161,7 +168,25 @@ fun PocetnaEkran(
             ),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            item { Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onTjedniPregled) { biramRaspon = true } }
+            // Tabovi u istoj stavci kao zaglavlje, da pomaci pretrage (indeksi stavki) ostanu isti.
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Segmenti(listOf("Ciklus", "Štednja"), tab, { tab = it }, boje = listOf(Neon.Zelena, Neon.LjubicastaSvijetla))
+                    if (tab == 0 && !ciklusZakljucan) Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onTjedniPregled) { biramRaspon = true }
+                }
+            }
+            if (tab == 1) {
+                item {
+                    hr.smartbudget.app.ui.ZasticeniDio(hr.smartbudget.app.ui.Dijelovi.STEDNJA, "Štednja") {
+                        hr.smartbudget.app.ui.SkriveniIznosiStednje { stednja() }
+                    }
+                }
+                return@LazyColumn
+            }
+            if (ciklusZakljucan) {
+                item { hr.smartbudget.app.ui.ZasticeniDio(hr.smartbudget.app.ui.Dijelovi.CIKLUS, "Ciklus") {} }
+                return@LazyColumn
+            }
             item { HeroKartica(s, privatnost, onPregled) }
             item { RacuniTraka(racuni, privatnost.sakrijStanje, onRacun, onNoviRacun, onPrijenos) }
             stickyHeader {
@@ -220,7 +245,7 @@ fun PocetnaEkran(
             if (fokusPretrage) item { Spacer(Modifier.fillParentMaxHeight()) }
         }
         // Brzi unos (FAB 60 dp, zaobljenje 20 dp)
-        Box(
+        if (tab == 0 && !ciklusZakljucan) Box(
             Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 24.dp, bottom = 106.dp)

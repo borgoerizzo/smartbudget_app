@@ -44,6 +44,9 @@ import hr.smartbudget.app.data.Racun
 import hr.smartbudget.app.ui.screens.CiljSheet
 import hr.smartbudget.app.ui.screens.UplataCiljaSheet
 import hr.smartbudget.app.ui.screens.NovcanikSheet
+import hr.smartbudget.app.ui.screens.StednjaTab
+import hr.smartbudget.app.ui.screens.CiljeviKartica
+import hr.smartbudget.app.ui.screens.NovcaniciKartica
 import hr.smartbudget.app.ui.screens.StednjaAnalitikaKartica
 import hr.smartbudget.app.ui.screens.CiljeviAnalitikaKartica
 import hr.smartbudget.app.ui.screens.KriptoAnalitikaKartica
@@ -222,17 +225,34 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onRacun = { sheet = Sheet.RacunS(it) },
                 onNoviRacun = { sheet = Sheet.RacunS(null) },
                 onPrijenos = { sheet = Sheet.Prijenos },
+                stednja = {
+                    StednjaTab(
+                        ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve, { sheet = Sheet.Prijenos },
+                        ciljeviKartica = {
+                            CiljeviKartica(
+                                ciljevi, { sheet = Sheet.Cilj(null) }, { sheet = Sheet.Cilj(it) }, { c, u -> sheet = Sheet.UplataCilja(c, u) },
+                                uplate, tecajevi, vm::osvjeziTecajeve,
+                            )
+                        },
+                        novcaniciKartica = {
+                            NovcaniciKartica(
+                                novcanici, tecajevi, vm::osvjeziTecajeve, { sheet = Sheet.NovcanikS(null) },
+                                { sheet = Sheet.NovcanikS(it.novcanik.id) }, { sheet = Sheet.Kalkulator },
+                            )
+                        },
+                    )
+                },
             )
-            Ekran.ANALITIKA -> AnalitikaEkran(
+            Ekran.ANALITIKA -> hr.smartbudget.app.ui.ZasticeniZaslon(hr.smartbudget.app.ui.Dijelovi.CIKLUS, "Analitika") { AnalitikaEkran(
                 analitika, vm::prethodniCiklus, vm::sljedeciCiklus, vm::trenutniCiklus, vm::postaviBrojCiklusa, godisnji, vm::postaviGodinu,
                 imaCiljeva = ciljevi.isNotEmpty(),
-                ciljevi = { CiljeviAnalitikaKartica(ciljevi, uplate, tecajevi, vm::osvjeziTecajeve) },
+                ciljevi = { StednjaZasticena { CiljeviAnalitikaKartica(ciljevi, uplate, tecajevi, vm::osvjeziTecajeve) } },
                 imaStednje = ciljevi.isNotEmpty() || novcanici.isNotEmpty(),
-                stednja = { StednjaAnalitikaKartica(ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve) },
+                stednja = { StednjaZasticena { StednjaAnalitikaKartica(ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve) } },
                 imaKripta = novcanici.any { it.valuta.kripto },
-                kripto = { KriptoAnalitikaKartica(novcanici, tecajevi, kriptoPovijest, vm::osvjeziTecajeve, vm::osvjeziKriptoPovijest) },
-            )
-            Ekran.BUDZETI -> BudzetiEkran(
+                kripto = { StednjaZasticena { KriptoAnalitikaKartica(novcanici, tecajevi, kriptoPovijest, vm::osvjeziTecajeve, vm::osvjeziKriptoPovijest) } },
+            ) }
+            Ekran.BUDZETI -> hr.smartbudget.app.ui.ZasticeniZaslon(hr.smartbudget.app.ui.Dijelovi.CIKLUS, "Budžeti") { BudzetiEkran(
                 budzeti, ponavljajuci,
                 onNova = { sheet = Sheet.Kategorije(null) },
                 onUredi = { sheet = Sheet.Kategorije(it) },
@@ -249,7 +269,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onNovcanik = { sheet = Sheet.NovcanikS(it.novcanik.id) },
                 onKalkulator = { sheet = Sheet.Kalkulator },
                 uplateCiljeva = uplate,
-            )
+            ) }
             Ekran.POSTAVKE -> PostavkeEkran(vm)
         }
         // Prijelaz prema dnu iza navigacije
@@ -338,3 +358,10 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
         null -> Unit
     }
 }
+
+/** Kartica štednje u Analitici: zaključana (bez automatskog upita) ako je zaključana štednja, zamućena ako je skrivena. */
+@Composable
+private fun StednjaZasticena(sadrzaj: @Composable () -> Unit) =
+    hr.smartbudget.app.ui.ZasticeniDio(hr.smartbudget.app.ui.Dijelovi.STEDNJA, "Štednja", automatski = false) {
+        hr.smartbudget.app.ui.SkriveniIznosiStednje(sadrzaj)
+    }

@@ -60,9 +60,15 @@ object Zakljucavanje {
     /** Poziva se iz onStart: zaključa ako je uključeno i aplikacija je bila dovoljno dugo u pozadini. */
     fun naPokretanju(context: Context) {
         val p = AppPostavke.get(context).stanje.value
-        if (!p.zakljucavanje || !p.imaPin) { zakljucano.value = false; prviPut = false; return }
         val proteklo = (SystemClock.elapsedRealtime() - uPozadiniOd) / 1000
-        if (prviPut || proteklo >= p.odgodaSekundi) zakljucano.value = true
+        // Otkriveni iznosi štednje se ponovno skrivaju nakon odgode u pozadini.
+        if (prviPut || proteklo >= p.odgodaSekundi) Dijelovi.stednjaOtkrivena.value = false
+        if (!p.zakljucavanje || !p.imaPin) { zakljucano.value = false; prviPut = false; return }
+        if (prviPut || proteklo >= p.odgodaSekundi) {
+            // Cijela aplikacija, ili samo jedan dio (ciklus / štednja) koji traži otključavanje kad se otvori.
+            if (p.opsegZakljucavanja == Dijelovi.SVE) zakljucano.value = true
+            else { zakljucano.value = false; Dijelovi.otkljucano.value = emptySet() }
+        }
         prviPut = false
     }
 

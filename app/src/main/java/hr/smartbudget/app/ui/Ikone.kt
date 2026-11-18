@@ -47,6 +47,7 @@ object Ikone {
         "calendar" to "M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4",
         "chevDown" to "M6 9l6 6 6-6",
         "chevUp" to "M6 15l6-6 6 6",
+        "raspored" to "M4 6h10 M18 6h2 M4 12h4 M12 12h8 M4 18h12 M20 18h0 M16 4v4 M10 10v4 M18 16v4",
         "kalkulator" to "M6 3h12a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M8 7h8 M8.5 11.5h.01 M12 11.5h.01 M15.5 11.5h.01 M8.5 15h.01 M12 15h.01 M15.5 15h.01 M8.5 18.5h.01 M12 18.5h.01 M15.5 18.5h.01",
         "osvjezi" to "M20 12a8 8 0 1 1-2.3-5.7 M20 4v4h-4",
         "zamijeni" to "M7 4v16 M3 8l4-4 4 4 M17 20V4 M13 16l4 4 4-4",

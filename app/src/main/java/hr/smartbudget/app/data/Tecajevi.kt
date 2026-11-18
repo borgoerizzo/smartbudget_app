@@ -100,6 +100,19 @@ object Tecajevi {
         }
     }
 
+    /** Zadnje spremljene liste (bez mreže), za prikaz odmah dok se dohvaćaju svježe. */
+    fun spremljeno(ctx: Context): Pair<TecajnaLista?, KriptoCijene?> {
+        val p = prefs(ctx)
+        val h = p.getString("hnb", null)?.let { json ->
+            runCatching {
+                val t = p.getLong("hnbVrijeme", 0)
+                (if (p.getString("hnbIzvor", "HNB") == "ECB") parsirajEcb(json, t) else parsirajHnb(json, t)).copy(izSpremljenog = true)
+            }.getOrNull()
+        }
+        val k = p.getString("kripto", null)?.let { json -> runCatching { parsirajKripto(json, p.getLong("kriptoVrijeme", 0)).copy(izSpremljenog = true) }.getOrNull() }
+        return h to k
+    }
+
     // --- CoinGecko ---
 
     fun parsirajKripto(json: String, dohvaceno: Long): KriptoCijene {

@@ -1,5 +1,11 @@
 package hr.smartbudget.app.ui.screens
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -70,6 +76,9 @@ fun BudzetiEkran(
     onKalkulator: () -> Unit = {},
     uplateCiljeva: List<hr.smartbudget.app.data.UplataCilja> = emptyList(),
 ) {
+    val appPostavke = hr.smartbudget.app.data.AppPostavke.get(androidx.compose.ui.platform.LocalContext.current)
+    val postavke by appPostavke.stanje.collectAsState()
+    var uredujem by remember { mutableStateOf(false) }
     LazyColumn(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 132.dp),
@@ -81,29 +90,51 @@ fun BudzetiEkran(
                     Text("Kategorije i budžeti", style = Tip.naslovVeliki.copy(fontSize = 26.sp))
                     Text("Ciklus: ${HrDatum.raspon(s.ciklus)}", style = Tip.malo.copy(fontSize = 14.sp))
                 }
+                GumbRasporeda { uredujem = true }
+                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
                 TonalniGumb("Nova", onNova, ikona = "plus", modifier = Modifier.neonSjaj(Neon.Zelena, 14.dp, 22.dp, .22f))
             }
         }
-        item { UkupniLimit(s) }
-        item { PonavljajuciKartica(ponavljajuci, onNoviPonavljajuci, onUrediPonavljajuci) }
-        item { CiljeviKartica(ciljevi, onNoviCilj, onUrediCilj, onUplatiCilj, uplateCiljeva, tecajevi, onOsvjeziTecajeve) }
-        item { NovcaniciKartica(novcanici, tecajevi, onOsvjeziTecajeve, onNoviNovcanik, onNovcanik, onKalkulator) }
-        item {
-            Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Limiti po kategorijama", style = Tip.naslovKartice.copy(fontSize = 18.sp))
-                Text(
-                    "Poredano po iskorištenosti. Sigurno do 80 %, blizu limita 80–99 %, prekoračeno od 100 %. Dodirnite karticu za uređivanje.",
-                    style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, lineHeight = 17.sp),
-                )
+        val skrivene = postavke.skrivene["budzeti"].orEmpty()
+        poredaj(KARTICE_BUDZETA, postavke.rasporedi["budzeti"].orEmpty()).filter { it.kljuc !in skrivene }.forEach { k ->
+            when (k.kljuc) {
+                "limit" -> item("limit") { UkupniLimit(s) }
+                "ponavljajuci" -> item("ponavljajuci") { PonavljajuciKartica(ponavljajuci, onNoviPonavljajuci, onUrediPonavljajuci) }
+                "kategorije" -> {
+                    item("kategorijeNaslov") {
+                        Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Limiti po kategorijama", style = Tip.naslovKartice.copy(fontSize = 18.sp))
+                            Text(
+                                "Poredano po iskorištenosti. Sigurno do 80 %, blizu limita 80–99 %, prekoračeno od 100 %. Dodirnite karticu za uređivanje.",
+                                style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, lineHeight = 17.sp),
+                            )
+                        }
+                    }
+                    items(s.troskovne, key = { it.kategorija.id }) { b -> KarticaKategorije(b) { onUredi(b.kategorija) } }
+                }
+                "prihodi" -> if (s.prihodovne.isNotEmpty()) {
+                    item("prihodiNaslov") { Text("Kategorije prihoda", style = Tip.naslovKartice.copy(fontSize = 18.sp), modifier = Modifier.padding(start = 4.dp, top = 10.dp)) }
+                    items(s.prihodovne, key = { it.kategorija.id }) { b -> KarticaPrihoda(b) { onUredi(b.kategorija) } }
+                }
             }
         }
-        items(s.troskovne, key = { it.kategorija.id }) { b -> KarticaKategorije(b) { onUredi(b.kategorija) } }
-        if (s.prihodovne.isNotEmpty()) {
-            item { Text("Kategorije prihoda", style = Tip.naslovKartice.copy(fontSize = 18.sp), modifier = Modifier.padding(start = 4.dp, top = 10.dp)) }
-            items(s.prihodovne, key = { it.kategorija.id }) { b -> KarticaPrihoda(b) { onUredi(b.kategorija) } }
-        }
+    }
+    if (uredujem) {
+        UrediRasporedSheet(
+            "Prilagodi budžete", KARTICE_BUDZETA,
+            postavke.rasporedi["budzeti"].orEmpty(), postavke.skrivene["budzeti"].orEmpty(),
+            { r, sk -> appPostavke.postaviRaspored("budzeti", r, sk) },
+            { appPostavke.vratiZadaniRaspored("budzeti") },
+        ) { uredujem = false }
     }
 }
+
+val KARTICE_BUDZETA = listOf(
+    StavkaRasporeda("limit", "Ukupni limit ciklusa"),
+    StavkaRasporeda("ponavljajuci", "Ponavljajući unosi"),
+    StavkaRasporeda("kategorije", "Limiti po kategorijama"),
+    StavkaRasporeda("prihodi", "Kategorije prihoda"),
+)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

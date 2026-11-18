@@ -247,6 +247,11 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     /** Svježi srednji tečaj HNB-a i cijene kriptovaluta (svaki put iznova; bez interneta zadnji spremljeni). */
     fun osvjeziTecajeve() {
         if (_tecajevi.value.ucitava) return
+        // Dok stižu svježi tečajevi, preračun odmah koristi zadnje spremljene.
+        if (_tecajevi.value.hnb == null || _tecajevi.value.kripto == null) {
+            val (h, k) = hr.smartbudget.app.data.Tecajevi.spremljeno(getApplication())
+            _tecajevi.value = _tecajevi.value.copy(hnb = _tecajevi.value.hnb ?: h, kripto = _tecajevi.value.kripto ?: k)
+        }
         _tecajevi.value = _tecajevi.value.copy(ucitava = true, greska = null)
         viewModelScope.launch {
             val ctx = getApplication<Application>()

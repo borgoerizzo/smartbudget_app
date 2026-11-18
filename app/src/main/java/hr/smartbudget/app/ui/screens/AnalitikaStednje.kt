@@ -1,5 +1,6 @@
 package hr.smartbudget.app.ui.screens
 
+import hr.smartbudget.app.ui.skrivaStednju
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -98,7 +99,7 @@ fun StednjaAnalitikaKartica(
 
     Kartica(razmak = 14.dp) {
         NaslovKartice("Štednja", "Ciljevi i novčanici, preračunato u ${osnovna.kod}")
-        Text(Valute.iznos(ukupno, osnovna), fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Neon.Zelena)
+        Text(Valute.iznos(ukupno, osnovna), fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Neon.Zelena, modifier = Modifier.skrivaStednju())
 
         // Sastav kao jedna složena traka s legendom
         if (dijelovi.size > 1) {
@@ -198,7 +199,7 @@ fun KriptoAnalitikaKartica(
             KruzniGumb("osvjezi", "Osvježi cijene", { onOsvjeziTecajeve(); onPovijest(dana) }, velicina = 38.dp, boja = Neon.LjubicastaSvijetla)
         }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(Valute.iznos(ukupno, osnovna), fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Neon.LjubicastaTekst)
+            Text(Valute.iznos(ukupno, osnovna), fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Neon.LjubicastaTekst, modifier = Modifier.skrivaStednju())
             if (t.kripto != null && ukupno > 0) {
                 val p = promjena24 * 100 / (ukupno - promjena24).coerceAtLeast(.01)
                 Text(
@@ -344,7 +345,7 @@ fun CiljeviAnalitikaKartica(
     Kartica(razmak = 14.dp) {
         NaslovKartice("Ciljevi štednje", "Napredak prema ciljevima i u odnosu na plan")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PlocicaBroja("Ušteđeno", Valute.iznos(ukupnoUst / 100.0, osnovna), Neon.Zelena, Modifier.weight(1f))
+            PlocicaBroja("Ušteđeno", Valute.iznos(ukupnoUst / 100.0, osnovna), Neon.Zelena, Modifier.weight(1f).skrivaStednju())
             PlocicaBroja("Ukupni cilj", Valute.iznos(ukupnoCilj / 100.0, osnovna), Neon.Tekst, Modifier.weight(1f))
             PlocicaBroja("Ostvareno", Novac.postotak(udio * 100.0, 0), Neon.Cijan, Modifier.weight(1f))
         }

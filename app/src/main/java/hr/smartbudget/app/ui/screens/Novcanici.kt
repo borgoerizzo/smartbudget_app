@@ -1,5 +1,6 @@
 package hr.smartbudget.app.ui.screens
 
+import hr.smartbudget.app.ui.skrivaStednju
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -425,5 +426,57 @@ fun KalkulatorValutaSheet(
             }
         }
         Spacer(Modifier.height(4.dp))
+    }
+}
+
+/**
+ * Tab "Štednja" na Početnoj: ukupno ušteđeno (ciljevi + novčanici, preračunato u osnovnu valutu),
+ * brzi prijenos s računa, ciljevi štednje i štednja u valutama.
+ */
+@Composable
+fun StednjaTab(
+    ciljevi: List<CiljStednje>,
+    uplate: List<hr.smartbudget.app.data.UplataCilja>,
+    novcanici: List<StanjeNovcanika>,
+    t: StanjeTecajeva,
+    onOsvjezi: () -> Unit,
+    onPrijenos: () -> Unit,
+    ciljeviKartica: @Composable () -> Unit,
+    novcaniciKartica: @Composable () -> Unit,
+) {
+    val treba = novcanici.isNotEmpty() || uplate.any { it.valuta != null }
+    LaunchedEffect(treba) { if (treba) onOsvjezi() }
+    val osnovna = osnovnaValuta()
+    val uOsnovnu: (Long, Valuta) -> Double? = { j, v -> uOsnovnuValutu(j, v, t) }
+    val uCiljevima = ciljevi.sumOf { hr.smartbudget.app.domain.ustedjenoCilja(it, uplate, uOsnovnu).centi } / 100.0
+    val uNovcanicima = novcanici.sumOf { uOsnovnu(it.stanje, it.valuta) ?: 0.0 }
+    val ukupnoCilj = ciljevi.sumOf { it.ciljCenti } / 100.0
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        hr.smartbudget.app.ui.Kartica(razmak = 12.dp, sjaj = Neon.LjubicastaSvijetla) {
+            Text("Ukupna štednja", style = Tip.oznaka)
+            Text(Valute.iznos(uCiljevima + uNovcanicima, osnovna), fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = Neon.LjubicastaTekst, maxLines = 1, modifier = Modifier.skrivaStednju())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PlocicaStednje("Ciljevi", Valute.iznos(uCiljevima, osnovna), if (ukupnoCilj > 0) "od ${Valute.iznos(ukupnoCilj, osnovna)}" else "${ciljevi.size} ciljeva", Modifier.weight(1f))
+                PlocicaStednje("U valutama", Valute.iznos(uNovcanicima, osnovna), "${novcanici.size} novčanika", Modifier.weight(1f))
+            }
+            TonalniGumb("Prenesi s računa na štednju", onPrijenos, Modifier.fillMaxWidth(), ikona = "transfer", boja = Neon.LjubicastaSvijetla, visina = 48.dp)
+            if (novcanici.any { it.valuta.kod != osnovna.kod } || uplate.any { it.valuta != null }) {
+                IzvorTecajeva(t, kripto = novcanici.any { it.valuta.kripto }, fiat = true)
+            }
+        }
+        ciljeviKartica()
+        novcaniciKartica()
+    }
+}
+
+@Composable
+private fun PlocicaStednje(naziv: String, iznos: String, opis: String, modifier: Modifier) {
+    Column(
+        modifier.clip(RoundedCornerShape(16.dp)).background(Neon.Ispuna).border(1.dp, Neon.RubSlab, RoundedCornerShape(16.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(naziv, style = Tip.oznaka)
+        Text(iznos, style = Tip.iznos.copy(fontSize = 16.sp), color = Neon.Tekst, maxLines = 1)
+        Text(opis, style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp), maxLines = 1)
     }
 }
