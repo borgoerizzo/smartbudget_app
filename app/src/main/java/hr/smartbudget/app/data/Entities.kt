@@ -80,6 +80,35 @@ data class UplataCilja(
     val ciljId: Long,
     val iznosCenti: Long,
     val epochDan: Long,
+    /**
+     * Valuta uplate; null = osnovna valuta aplikacije (i tada je iznos uračunat u [CiljStednje.ustedjenoCenti]).
+     * Uplate u drugim valutama čuvaju se u najmanjim jedinicama te valute i preračunavaju po današnjem tečaju.
+     */
+    val valuta: String? = null,
+)
+
+/**
+ * Novčanik štednje u jednoj valuti (euro, strana valuta ili kriptovaluta).
+ * Stanje je zbroj promjena; iznosi su u najmanjim jedinicama valute (vidi [hr.smartbudget.app.domain.Valuta]).
+ */
+@Entity(tableName = "novcanici")
+data class Novcanik(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val naziv: String,
+    val valuta: String,
+    val redoslijed: Int = 0,
+)
+
+/** Uplata (pozitivna) ili isplata (negativna) u novčaniku. */
+@Entity(tableName = "promjene_novcanika", indices = [Index("novcanikId")])
+data class PromjenaNovcanika(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val novcanikId: Long,
+    val jedinice: Long,
+    val epochDan: Long,
+    /** Koliko je kupnja koštala u osnovnoj valuti aplikacije (opcionalno, za dobit/gubitak kod kriptovaluta). */
+    val ulozenoCenti: Long? = null,
+    val napomena: String = "",
 )
 
 /** Stanje jednog računa iz transakcija (bez početnog stanja). */

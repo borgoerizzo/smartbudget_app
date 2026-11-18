@@ -27,6 +27,8 @@ data class StanjePostavki(
     val tjedniMinuta: Int = 19 * 60,
     /** Račun koji je unaprijed odabran pri novom unosu; null = Kartica. */
     val zadaniRacun: String? = null,
+    /** Osnovna valuta aplikacije (kod, npr. EUR, CHF). */
+    val valuta: String = "EUR",
 )
 
 class AppPostavke private constructor(context: Context) {
@@ -51,7 +53,14 @@ class AppPostavke private constructor(context: Context) {
         tjedniDan = prefs.getInt("tjedniDan", 7),
         tjedniMinuta = prefs.getInt("tjedniMinuta", 19 * 60),
         zadaniRacun = prefs.getString("zadaniRacun", null),
-    )
+        valuta = prefs.getString("valuta", "EUR") ?: "EUR",
+    ).also { primijeniValutu(it.valuta) }
+
+    private fun primijeniValutu(kod: String) {
+        val v = hr.smartbudget.app.domain.Valute.po(kod)
+        hr.smartbudget.app.domain.Novac.simbol = v.simbol
+        hr.smartbudget.app.domain.Novac.kodValute = v.kod
+    }
 
     private fun postavi(kljuc: String, v: Boolean) { prefs.edit().putBoolean(kljuc, v).apply(); _stanje.value = ucitaj() }
 
@@ -66,6 +75,7 @@ class AppPostavke private constructor(context: Context) {
     fun postaviTjedni(v: Boolean) = postavi("tjedni", v)
     fun postaviTjedniDan(d: Int) { prefs.edit().putInt("tjedniDan", d).apply(); _stanje.value = ucitaj() }
     fun postaviTjedniMinuta(m: Int) { prefs.edit().putInt("tjedniMinuta", m).apply(); _stanje.value = ucitaj() }
+    fun postaviValutu(kod: String) { prefs.edit().putString("valuta", kod).apply(); _stanje.value = ucitaj() }
     fun postaviZadaniRacun(naziv: String) { prefs.edit().putString("zadaniRacun", naziv).apply(); _stanje.value = ucitaj() }
     fun postaviPodsjetnikMinuta(m: Int) { prefs.edit().putInt("podsjetnikMinuta", m).apply(); _stanje.value = ucitaj() }
 
@@ -110,6 +120,6 @@ class AppPostavke private constructor(context: Context) {
         }
 
         /** Prikaz skrivenog iznosa. */
-        const val SKRIVENO = "•••• €"
+        val SKRIVENO: String get() = "•••• " + hr.smartbudget.app.domain.Novac.simbol
     }
 }

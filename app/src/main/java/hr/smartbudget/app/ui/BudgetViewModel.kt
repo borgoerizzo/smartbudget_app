@@ -42,6 +42,7 @@ import hr.smartbudget.app.domain.zbroj
 import hr.smartbudget.app.export.FormatIzvoza
 import hr.smartbudget.app.export.Izvoz
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -164,6 +165,25 @@ data class BudzetiStanje(
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
+data class StanjeTecajeva(
+    val hnb: hr.smartbudget.app.data.TecajnaLista? = null,
+    val kripto: hr.smartbudget.app.data.KriptoCijene? = null,
+    val ucitava: Boolean = false,
+    val greska: String? = null,
+) {
+    /** Iznos u najmanjim jedinicama valute [iz] preračunat u valutu [u]; null bez tečaja. */
+    fun pretvori(jedinice: Long, iz: hr.smartbudget.app.domain.Valuta, u: hr.smartbudget.app.domain.Valuta): Double? =
+        hr.smartbudget.app.data.Tecajevi.pretvori(hr.smartbudget.app.domain.Valute.uBroj(jedinice, iz), iz, u, hnb, kripto)
+}
+
+data class KriptoPovijest(
+    val cijene: Map<String, List<Pair<LocalDate, Double>>> = emptyMap(),
+    val dana: Int = 90,
+    val ucitava: Boolean = false,
+    val dohvaceno: Long = 0,
+    val greska: String? = null,
+)
+
 class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = BudgetRepository.get(app)
     private val tDao = repo.db.transakcije()
@@ -214,6 +234,62 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     /** Uplate na ciljeve, najnovije prve. */
     val uplate: StateFlow<List<hr.smartbudget.app.data.UplataCilja>> = repo.db.uplate().promatrajSve()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // --- Novčanici i tečajevi ---
+
+    val novcanici: StateFlow<List<hr.smartbudget.app.domain.StanjeNovcanika>> =
+        combine(repo.db.novcanici().promatrajSve(), repo.db.novcanici().promatrajPromjene()) { n, p -> hr.smartbudget.app.domain.stanjaNovcanika(n, p) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _tecajevi = MutableStateFlow(StanjeTecajeva())
+    val tecajevi: StateFlow<StanjeTecajeva> = _tecajevi
+
+    /** Svježi srednji tečaj HNB-a i cijene kriptovaluta (svaki put iznova; bez interneta zadnji spremljeni). */
+    fun osvjeziTecajeve() {
+        if (_tecajevi.value.ucitava) return
+        _tecajevi.value = _tecajevi.value.copy(ucitava = true, greska = null)
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            // Usporedno: kriptovalute ne čekaju HNB (koji na nekim mrežama odgovara sporo).
+            val hPosao = async { hr.smartbudget.app.data.Tecajevi.hnb(ctx) }
+            val k = hr.smartbudget.app.data.Tecajevi.kripto(ctx)
+            k.getOrNull()?.let { _tecajevi.value = _tecajevi.value.copy(kripto = it) }
+            val h = hPosao.await()
+            _tecajevi.value = StanjeTecajeva(
+                hnb = h.getOrNull() ?: _tecajevi.value.hnb,
+                kripto = k.getOrNull() ?: _tecajevi.value.kripto,
+                ucitava = false,
+                greska = if (h.isFailure || k.isFailure) "Tečajevi se ne mogu dohvatiti. Provjerite internetsku vezu." else null,
+            )
+        }
+    }
+
+    private val _kriptoPovijest = MutableStateFlow(KriptoPovijest())
+    val kriptoPovijest: StateFlow<KriptoPovijest> = _kriptoPovijest
+
+    /** Dnevne cijene kriptovaluta iz novčanika za zadnjih [dana] dana (CoinGecko). */
+    fun osvjeziKriptoPovijest(dana: Int) {
+        val kodovi = novcanici.value.map { it.valuta }.filter { it.kripto }.distinctBy { it.kod }
+        if (kodovi.isEmpty() || _kriptoPovijest.value.ucitava) return
+        _kriptoPovijest.value = _kriptoPovijest.value.copy(ucitava = true, greska = null, dana = dana)
+        viewModelScope.launch {
+            // Jedan po jedan, da se ne prijeđe ograničenje broja upita
+            val ctx = getApplication<Application>()
+            val rez = kodovi.associate { it.kod to hr.smartbudget.app.data.Tecajevi.povijest(ctx, it, dana) }
+            _kriptoPovijest.value = KriptoPovijest(
+                cijene = rez.mapNotNull { (k, r) -> r.getOrNull()?.let { k to it } }.toMap(),
+                dana = dana, ucitava = false, dohvaceno = System.currentTimeMillis(),
+                greska = if (rez.values.any { it.isFailure }) "Povijest cijena se ne može dohvatiti. Provjerite internetsku vezu." else null,
+            )
+        }
+    }
+
+    fun spremiNovcanik(n: hr.smartbudget.app.data.Novcanik) = repo.opseg.launch {
+        repo.spremiNovcanik(n); _poruke.tryEmit(if (n.id == 0L) "Novčanik dodan" else "Novčanik spremljen")
+    }
+    fun obrisiNovcanik(n: hr.smartbudget.app.data.Novcanik) = repo.opseg.launch { repo.obrisiNovcanik(n); _poruke.tryEmit("Novčanik obrisan") }
+    fun dodajPromjenu(p: hr.smartbudget.app.data.PromjenaNovcanika) = repo.opseg.launch { repo.dodajPromjenu(p) }
+    fun obrisiPromjenu(p: hr.smartbudget.app.data.PromjenaNovcanika) = repo.opseg.launch { repo.obrisiPromjenu(p) }
 
     /** Višak (prihodi − rashodi) prošlog ciklusa, kao prijedlog za uplatu na cilj; null ako ga nema. */
     val visakProslogCiklusa: StateFlow<Long?> = combine(cycleManager, danas) { cm, d -> cm.ciklusZaSidro(cm.ciklusZa(d).sidro.minusMonths(1)) }
@@ -369,6 +445,14 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
 
     fun obrisiRacun(r: Racun) = repo.opseg.launch { _poruke.tryEmit(repo.obrisiRacun(r) ?: "Račun obrisan") }
 
+    fun prijenosNaStednju(
+        s: String, iznosCenti: Long, kada: Long, opis: String,
+        cilj: CiljStednje?, novcanik: hr.smartbudget.app.data.Novcanik?, jedinice: Long,
+    ) = repo.opseg.launch {
+        repo.prijenosNaStednju(s, iznosCenti, kada, opis, cilj, novcanik, jedinice)
+        _poruke.tryEmit("Prijenos ${Novac.eur(iznosCenti)}: $s → ${cilj?.naziv ?: novcanik?.naziv}")
+    }
+
     fun prijenos(s: String, na: String, iznosCenti: Long, kada: Long, opis: String) = repo.opseg.launch {
         repo.prijenos(s, na, iznosCenti, kada, opis)
         _poruke.tryEmit("Prijenos ${Novac.eur(iznosCenti)}: $s → $na")
@@ -383,6 +467,16 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
         _poruke.tryEmit(if (c.id == 0L) "Cilj štednje dodan" else "Cilj spremljen")
     }
 
+    fun obrisiUplatuCilja(u: hr.smartbudget.app.data.UplataCilja) = repo.opseg.launch {
+        repo.obrisiUplatuCilja(u); _poruke.tryEmit("Unos obrisan")
+    }
+
+    fun uplatiNaCiljUValuti(c: CiljStednje, jedinice: Long, valuta: hr.smartbudget.app.domain.Valuta) = repo.opseg.launch {
+        repo.uplatiNaCiljUValuti(c, jedinice, valuta.kod)
+        val t = hr.smartbudget.app.domain.Valute.iznos(kotlin.math.abs(jedinice), valuta)
+        _poruke.tryEmit(if (jedinice >= 0) "Uplaćeno $t na \"${c.naziv}\"" else "Povučeno $t s \"${c.naziv}\"")
+    }
+
     fun uplatiNaCilj(c: CiljStednje, iznosCenti: Long) = repo.opseg.launch {
         repo.uplatiNaCilj(c, iznosCenti)
         _poruke.tryEmit(if (iznosCenti >= 0) "Uplaćeno ${Novac.eur(iznosCenti)} na \"${c.naziv}\"" else "Povučeno ${Novac.eur(-iznosCenti)} s \"${c.naziv}\"")
@@ -390,6 +484,9 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
 
     fun obrisiCilj(c: CiljStednje) = repo.opseg.launch { repo.obrisiCilj(c); _poruke.tryEmit("Cilj obrisan") }
     fun postaviBrojCiklusa(n: Int) { brojCiklusa.value = n }
+
+    /** Nakon promjene valute: widget odmah prikazuje novu oznaku. */
+    fun osvjeziWidget() = repo.opseg.launch { hr.smartbudget.app.widget.StanjeWidget.osvjezi(repo.context) }
 
     // Upisi idu kroz repozitorij u opsegu procesa, pa završe i ako se zaslon zatvori.
     fun spremiTransakciju(t: Transakcija) = repo.opseg.launch {

@@ -10,9 +10,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [
         Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class,
-        PrilagodbaCiklusa::class, Racun::class, CiljStednje::class, UplataCilja::class,
+        PrilagodbaCiklusa::class, Racun::class, CiljStednje::class, UplataCilja::class, Novcanik::class, PromjenaNovcanika::class,
     ],
-    version = 5,
+    version = 7,
     exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
@@ -24,6 +24,7 @@ abstract class BudgetDatabase : RoomDatabase() {
     abstract fun racuni(): RacunDao
     abstract fun ciljevi(): CiljDao
     abstract fun uplate(): UplataDao
+    abstract fun novcanici(): NovcanikDao
 
     companion object {
         /** Tekući račun, Kartica i Gotovina (dosadašnji načini plaćanja). */
@@ -45,7 +46,7 @@ abstract class BudgetDatabase : RoomDatabase() {
         fun get(context: Context): BudgetDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, BudgetDatabase::class.java, "smartbudget.db")
                 .addCallback(Pocetni)
-                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5)
+                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7)
                 .build()
                 .also { instance = it }
         }
@@ -114,6 +115,28 @@ abstract class BudgetDatabase : RoomDatabase() {
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_uplate_cilja_ciljId` ON `uplate_cilja` (`ciljId`)")
             // Već ušteđeno postaje prva uplata, da povijest odgovara stanju.
             db.execSQL("INSERT INTO `uplate_cilja` (ciljId, iznosCenti, epochDan) SELECT id, ustedjenoCenti, kreiranEpochDan FROM `ciljevi` WHERE ustedjenoCenti != 0")
+        }
+    }
+
+    /** v6: novčanici štednje u više valuta i kriptovalutama. */
+    private object MIGRACIJA_5_6 : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `novcanici` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `naziv` TEXT NOT NULL, " +
+                    "`valuta` TEXT NOT NULL, `redoslijed` INTEGER NOT NULL)",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `promjene_novcanika` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `novcanikId` INTEGER NOT NULL, " +
+                    "`jedinice` INTEGER NOT NULL, `epochDan` INTEGER NOT NULL, `ulozenoCenti` INTEGER, `napomena` TEXT NOT NULL)",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_promjene_novcanika_novcanikId` ON `promjene_novcanika` (`novcanikId`)")
+        }
+    }
+
+    /** v7: uplate na ciljeve u stranim valutama i kriptovalutama. */
+    private object MIGRACIJA_6_7 : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `uplate_cilja` ADD COLUMN `valuta` TEXT")
         }
     }
 

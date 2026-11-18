@@ -1,5 +1,9 @@
 package hr.smartbudget.app.ui.screens
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import hr.smartbudget.app.domain.UstedjenoCilja
+import hr.smartbudget.app.domain.ustedjenoCilja
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -86,7 +90,7 @@ import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
 private fun kratkiIznos(centi: Long): String =
-    if (centi >= 100_00) Novac.cijeli((centi + 50) / 100) + " €" else Novac.eur(centi)
+    if (centi >= 100_00) Novac.cijeli((centi + 50) / 100) + " " + Novac.simbol else Novac.eur(centi)
 
 @Composable
 fun CiljeviKartica(
@@ -94,7 +98,13 @@ fun CiljeviKartica(
     onNovi: () -> Unit,
     onUredi: (CiljStednje) -> Unit,
     onUplati: (CiljStednje, Boolean) -> Unit,
+    uplate: List<UplataCilja> = emptyList(),
+    t: hr.smartbudget.app.ui.StanjeTecajeva = hr.smartbudget.app.ui.StanjeTecajeva(),
+    onOsvjezi: () -> Unit = {},
 ) {
+    // Uplate u stranim valutama vrednuju se po današnjem tečaju.
+    val imaValuta = uplate.any { u -> u.valuta != null && ciljevi.any { it.id == u.ciljId } }
+    LaunchedEffect(imaValuta) { if (imaValuta) onOsvjezi() }
     Kartica(razmak = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -106,13 +116,14 @@ fun CiljeviKartica(
         if (ciljevi.isEmpty()) Text("Postavite cilj i pratite koliko ste uštedjeli i koliko treba odvajati.", style = Tip.malo)
         ciljevi.forEachIndexed { i, c ->
             if (i > 0) HorizontalDivider(color = Neon.RubSlab)
-            StavkaCilja(c, { onUredi(c) }, { onUplati(c, it) })
+            val ust = ustedjenoCilja(c, uplate) { j, v -> uOsnovnuValutu(j, v, t) }
+            StavkaCilja(c.copy(ustedjenoCenti = ust.centi), ust, t, { onUredi(c) }, { onUplati(c, it) })
         }
     }
 }
 
 @Composable
-private fun StavkaCilja(c: CiljStednje, onUredi: () -> Unit, onUplati: (Boolean) -> Unit) {
+private fun StavkaCilja(c: CiljStednje, ust: UstedjenoCilja, t: hr.smartbudget.app.ui.StanjeTecajeva, onUredi: () -> Unit, onUplati: (Boolean) -> Unit) {
     val boja = hexBoja(c.bojaHex)
     val a = analizirajCilj(c)
     Column(
@@ -123,7 +134,7 @@ private fun StavkaCilja(c: CiljStednje, onUredi: () -> Unit, onUplati: (Boolean)
             PrstenCilja(c, a.udio, boja, a.status == StatusCilja.DOSEGNUT, Ikone.ikona(c.ikonaNaziv))
             Column(Modifier.weight(1f).padding(start = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(c.naziv, style = Tip.tijelo.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${Novac.eur(c.ustedjenoCenti)} od ${Novac.eur(c.ciljCenti)}", style = Tip.malo, maxLines = 1)
+                Text("${if (ust.valute.isNotEmpty()) "≈ " else ""}${Novac.eur(c.ustedjenoCenti)} od ${Novac.eur(c.ciljCenti)}", style = Tip.malo, maxLines = 1)
                 val (tekst, b) = when (a.status) {
                     StatusCilja.DOSEGNUT -> "Dosegnut ✓" to Neon.Zelena
                     StatusCilja.ISPRED_PLANA -> "Ispred plana" to Neon.Zelena
@@ -134,6 +145,22 @@ private fun StavkaCilja(c: CiljStednje, onUredi: () -> Unit, onUplati: (Boolean)
                 }
                 Oznaka(tekst, b)
             }
+        }
+        if (ust.valute.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Neon.Ispuna).padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("U valutama", style = Tip.oznaka)
+                Text(
+                    ust.valute.entries.joinToString(" · ") { (k, j) -> hr.smartbudget.app.domain.Valute.iznos(j, hr.smartbudget.app.domain.Valute.po(k)) },
+                    style = Tip.tijelo.copy(fontSize = 13.sp), modifier = Modifier.weight(1f), maxLines = 2,
+                )
+            }
+            Text(
+                if (t.ucitava) "Preračunavam po današnjem tečaju…" else if (!ust.potpuno) "Za neke valute tečaj nije dostupan, ukupno je nepotpuno." else "Strane valute i kriptovalute uračunate su po današnjem tečaju.",
+                style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp),
+            )
         }
         if (a.status != StatusCilja.DOSEGNUT && a.danaDoRoka != null && a.danaDoRoka > 0) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -265,22 +292,65 @@ private fun PrstenCilja(c: CiljStednje, udio: Float, boja: Color, dosegnut: Bool
 
 /** Uplata na cilj ili povlačenje s njega; brzi iznosi uključuju višak prošlog ciklusa i ostatak do cilja. */
 @Composable
-fun UplataCiljaSheet(c: CiljStednje, uplata: Boolean, visakProslog: Long?, onPotvrdi: (Long) -> Unit, onZatvori: () -> Unit) {
+fun UplataCiljaSheet(
+    c: CiljStednje,
+    uplata: Boolean,
+    visakProslog: Long?,
+    onPotvrdi: (Long) -> Unit,
+    onZatvori: () -> Unit,
+    uplate: List<UplataCilja> = emptyList(),
+    t: hr.smartbudget.app.ui.StanjeTecajeva = hr.smartbudget.app.ui.StanjeTecajeva(),
+    onOsvjezi: () -> Unit = {},
+    onUValuti: (Long, hr.smartbudget.app.domain.Valuta) -> Unit = { _, _ -> },
+) {
+    val osnovna = osnovnaValuta()
     var jeUplata by remember { mutableStateOf(uplata) }
+    var valuta by remember { mutableStateOf(osnovna) }
     var iznos by remember { mutableStateOf("") }
     var greska by remember { mutableStateOf<String?>(null) }
-    val a = analizirajCilj(c)
+    LaunchedEffect(Unit) { onOsvjezi() }
+    val ust = ustedjenoCilja(c, uplate) { j, v -> uOsnovnuValutu(j, v, t) }
+    val a = analizirajCilj(c.copy(ustedjenoCenti = ust.centi))
+    // Za povlačenje: samo valute u kojima na cilju ima novca
+    val dostupno: Map<String, Long> = mapOf(osnovna.kod to c.ustedjenoCenti).filterValues { it > 0 } + ust.valute
+    val uOsnovnoj = valuta.kod == osnovna.kod
     NeonSheet(onZatvori) {
         ZaglavljeSheeta(c.naziv, onZatvori)
-        Segmenti(listOf("Uplati", "Povuci"), if (jeUplata) 0 else 1, { jeUplata = it == 0; greska = null }, boje = listOf(Neon.Zelena, Neon.Jantar))
+        Segmenti(listOf("Uplati", "Povuci"), if (jeUplata) 0 else 1, {
+            jeUplata = it == 0; greska = null
+            if (!jeUplata && valuta.kod !in dostupno) valuta = dostupno.keys.firstOrNull()?.let { k -> hr.smartbudget.app.domain.Valute.po(k) } ?: osnovna
+        }, boje = listOf(Neon.Zelena, Neon.Jantar))
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            OznakaPolja(if (jeUplata) "Iznos uplate (€)" else "Iznos povlačenja (€)")
+            OznakaPolja("Valuta")
+            GumbValute(
+                valuta, Modifier.fillMaxWidth(),
+                valute = if (jeUplata) hr.smartbudget.app.domain.Valute.sve.sortedByDescending { it.kod == osnovna.kod }
+                else dostupno.keys.map { hr.smartbudget.app.domain.Valute.po(it) },
+            ) { valuta = it; iznos = ""; greska = null }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            OznakaPolja(if (jeUplata) "Iznos uplate (${valuta.kod})" else "Iznos povlačenja (${valuta.kod})")
             NeonPolje(
-                iznos, { iznos = it; greska = null }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true,
+                iznos, { iznos = it; greska = null }, Modifier.fillMaxWidth(),
+                placeholder = if (valuta.kripto) "0,00000000" else "0,00", uCentima = true, decimale = valuta.decimale,
                 stil = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = if (jeUplata) Neon.Zelena else Neon.Jantar, fontFeatureSettings = "tnum"),
             )
+            if (!uOsnovnoj) {
+                val j = hr.smartbudget.app.domain.Valute.parsiraj(iznos, valuta)
+                val pre = j?.let { uOsnovnuValutu(it, valuta, t) }
+                Text(
+                    when {
+                        j == null -> "Iznos se preračunava u ${osnovna.kod} po današnjem tečaju."
+                        pre != null -> "≈ ${hr.smartbudget.app.domain.Valute.iznos(pre, osnovna)} po današnjem tečaju"
+                        t.ucitava -> "Dohvaćam tečaj…"
+                        else -> "Tečaj trenutno nije dostupan; iznos će se uračunati kad bude."
+                    },
+                    style = Tip.oznaka.copy(fontWeight = FontWeight.Normal),
+                )
+                IzvorTecajeva(t, kripto = valuta.kripto, fiat = !valuta.kripto || osnovna.kod != "EUR")
+            }
         }
-        val brzi = buildList {
+        val brzi = if (!uOsnovnoj) emptyList() else buildList {
             if (jeUplata) {
                 a.tjedno?.takeIf { it > 0 }?.let { add("Tjedni iznos" to it) }
                 a.mjesecno?.takeIf { it > 0 }?.let { add("Mjesečni iznos" to it) }
@@ -310,6 +380,16 @@ fun UplataCiljaSheet(c: CiljStednje, uplata: Boolean, visakProslog: Long?, onPot
         )
         greska?.let { Text(it, color = Neon.Crvena, fontSize = 12.sp) }
         PrimarniGumb(if (jeUplata) "Uplati" else "Povuci", onClick = {
+            if (!uOsnovnoj) {
+                val j = hr.smartbudget.app.domain.Valute.parsiraj(iznos, valuta)
+                val ima = dostupno[valuta.kod] ?: 0L
+                when {
+                    j == null || j <= 0 -> greska = if (valuta.kripto) "Unesite iznos (najviše 8 decimala)." else "Unesite iznos."
+                    !jeUplata && j > ima -> greska = "Na cilju je samo ${hr.smartbudget.app.domain.Valute.iznos(ima, valuta)}."
+                    else -> { onUValuti(if (jeUplata) j else -j, valuta); onZatvori() }
+                }
+                return@PrimarniGumb
+            }
             val v = Novac.parsiraj(iznos)
             when {
                 v == null || v <= 0 -> greska = "Unesite iznos."
@@ -324,7 +404,15 @@ private val ikoneCilja = listOf("piggy", "plane", "home", "car", "gift", "phone"
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun CiljSheet(postojeci: CiljStednje?, uplate: List<UplataCilja>, onSpremi: (CiljStednje) -> Unit, onObrisi: (CiljStednje) -> Unit, onZatvori: () -> Unit) {
+fun CiljSheet(
+    postojeci: CiljStednje?,
+    uplate: List<UplataCilja>,
+    onSpremi: (CiljStednje) -> Unit,
+    onObrisi: (CiljStednje) -> Unit,
+    onZatvori: () -> Unit,
+    onObrisiUplatu: (UplataCilja) -> Unit = {},
+) {
+    var brisemUplatu by remember { mutableStateOf<UplataCilja?>(null) }
     var naziv by remember { mutableStateOf(postojeci?.naziv ?: "") }
     var cilj by remember { mutableStateOf(postojeci?.ciljCenti?.let { Novac.broj(it) } ?: "") }
     var ustedjeno by remember { mutableStateOf(postojeci?.ustedjenoCenti?.let { if (it == 0L) "" else Novac.broj(it) } ?: "") }
@@ -342,14 +430,14 @@ fun CiljSheet(postojeci: CiljStednje?, uplate: List<UplataCilja>, onSpremi: (Cil
             NeonPolje(naziv, { naziv = it; greska = null }, Modifier.fillMaxWidth(), placeholder = "npr. Ljetovanje")
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            OznakaPolja("Ciljni iznos (€)")
+            OznakaPolja("Ciljni iznos (${Novac.simbol})")
             NeonPolje(
                 cilj, { cilj = it; greska = null }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true,
                 stil = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Neon.Zelena, fontFeatureSettings = "tnum"),
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            OznakaPolja("Već ušteđeno (€)")
+            OznakaPolja("Već ušteđeno, bez uplata u drugim valutama (${Novac.simbol})")
             NeonPolje(ustedjeno, { ustedjeno = it }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true)
             if (postojeci != null) Text("Za redovite uplate koristi gumb Uplati na kartici cilja.", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
         }
@@ -402,18 +490,37 @@ fun CiljSheet(postojeci: CiljStednje?, uplate: List<UplataCilja>, onSpremi: (Cil
         val povijest = uplate.filter { it.ciljId == postojeci?.id }
         if (povijest.isNotEmpty()) {
             Column {
-                OznakaPolja("Povijest uplata")
-                povijest.take(10).forEachIndexed { i, u ->
+                OznakaPolja("Povijest uplata · pogrešan unos obrišite ikonom")
+                povijest.forEachIndexed { i, u ->
                     if (i > 0) HorizontalDivider(color = Neon.RubSlab)
-                    Row(Modifier.padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(HrDatum.puni(LocalDate.ofEpochDay(u.epochDan)), style = Tip.tijelo.copy(fontSize = 14.sp), modifier = Modifier.weight(1f))
-                        Text(Novac.predznak(u.iznosCenti), style = Tip.iznos.copy(fontSize = 14.sp), color = if (u.iznosCenti >= 0) Neon.Zelena else Neon.Jantar)
+                        Text(
+                            if (u.valuta == null) Novac.predznak(u.iznosCenti)
+                            else (if (u.iznosCenti >= 0) "+" else "") + hr.smartbudget.app.domain.Valute.iznos(u.iznosCenti, hr.smartbudget.app.domain.Valute.po(u.valuta)),
+                            style = Tip.iznos.copy(fontSize = 14.sp), color = if (u.iznosCenti >= 0) Neon.Zelena else Neon.Jantar,
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        KruzniGumb("trash", "Obriši unos", { brisemUplatu = u }, velicina = 34.dp, boja = Neon.Crvena)
                     }
                 }
-                if (povijest.size > 10) Text("i još ${povijest.size - 10} starijih", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
             }
         }
         if (postojeci != null) GumbBrisanja("Obriši cilj") { potvrda = true }
+    }
+    brisemUplatu?.let { u ->
+        val iznosTekst = if (u.valuta == null) Novac.predznak(u.iznosCenti)
+        else (if (u.iznosCenti >= 0) "+" else "") + hr.smartbudget.app.domain.Valute.iznos(u.iznosCenti, hr.smartbudget.app.domain.Valute.po(u.valuta))
+        PotvrdaBrisanja(
+            "Obrisati unos?",
+            "${HrDatum.puni(LocalDate.ofEpochDay(u.epochDan))} · $iznosTekst\nUnos se uklanja iz cilja kao da nikad nije upisan.",
+            { brisemUplatu = null },
+        ) {
+            onObrisiUplatu(u)
+            // Polje "Već ušteđeno" prati brisanje, da ga spremanje cilja ne vrati
+            if (u.valuta == null) ustedjeno = ((Novac.parsiraj(ustedjeno) ?: 0L) - u.iznosCenti).coerceAtLeast(0).let { if (it == 0L) "" else Novac.broj(it) }
+            brisemUplatu = null
+        }
     }
     if (biramRok) {
         val st = rememberDatePickerState(initialSelectedDateMillis = (rok ?: LocalDate.now().plusMonths(6)).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
@@ -434,4 +541,10 @@ fun CiljSheet(postojeci: CiljStednje?, uplate: List<UplataCilja>, onSpremi: (Cil
             onObrisi(postojeci); potvrda = false; onZatvori()
         }
     }
+}
+
+/** Iznos u najmanjim jedinicama valute [v] preračunat u osnovnu valutu (decimalno); null bez tečaja. */
+fun uOsnovnuValutu(jedinice: Long, v: hr.smartbudget.app.domain.Valuta, t: hr.smartbudget.app.ui.StanjeTecajeva): Double? {
+    val o = osnovnaValuta()
+    return if (v.kod == o.kod) hr.smartbudget.app.domain.Valute.uBroj(jedinice, v) else t.pretvori(jedinice, v, o)
 }

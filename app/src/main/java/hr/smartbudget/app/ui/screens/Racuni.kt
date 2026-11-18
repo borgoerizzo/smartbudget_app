@@ -142,7 +142,7 @@ fun RacunSheet(postojeci: Racun?, onSpremi: (Racun, String?) -> Unit, onObrisi: 
             NeonPolje(naziv, { naziv = it; greska = null }, Modifier.fillMaxWidth(), placeholder = "npr. Štednja, Revolut")
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            OznakaPolja("Početno stanje (€)")
+            OznakaPolja("Početno stanje (${Novac.simbol})")
             Text("Stanje računa prije prvog unosa u aplikaciji", style = Tip.malo.copy(fontSize = 12.sp))
             NeonPolje(
                 iznos, { iznos = it }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true,
@@ -201,9 +201,27 @@ fun RacunSheet(postojeci: Racun?, onSpremi: (Racun, String?) -> Unit, onObrisi: 
 /** Prijenos između dva računa (ne ulazi u prihode/troškove). */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun PrijenosSheet(racuni: List<Racun>, onSpremi: (String, String, Long, Long, String) -> Unit, onZatvori: () -> Unit) {
+fun PrijenosSheet(
+    racuni: List<Racun>,
+    onSpremi: (String, String, Long, Long, String) -> Unit,
+    onZatvori: () -> Unit,
+    ciljevi: List<hr.smartbudget.app.data.CiljStednje> = emptyList(),
+    novcanici: List<hr.smartbudget.app.domain.StanjeNovcanika> = emptyList(),
+    t: hr.smartbudget.app.ui.StanjeTecajeva = hr.smartbudget.app.ui.StanjeTecajeva(),
+    onOsvjezi: () -> Unit = {},
+    /** Prijenos na štednju: (s računa, iznos, vrijeme, opis, cilj ili novčanik, iznos u valuti novčanika). */
+    onNaStednju: (String, Long, Long, String, hr.smartbudget.app.data.CiljStednje?, hr.smartbudget.app.data.Novcanik?, Long) -> Unit = { _, _, _, _, _, _, _ -> },
+) {
     var s by remember { mutableStateOf(racuni.getOrNull(0)?.naziv) }
     var na by remember { mutableStateOf(racuni.getOrNull(1)?.naziv) }
+    // Odredište na štednji (umjesto računa)
+    var naCilj by remember { mutableStateOf<hr.smartbudget.app.data.CiljStednje?>(null) }
+    var naNovcanik by remember { mutableStateOf<hr.smartbudget.app.domain.StanjeNovcanika?>(null) }
+    var primljeno by remember { mutableStateOf("") }
+    var primljenoRucno by remember { mutableStateOf(false) }
+    val osnovna = osnovnaValuta()
+    val stranaValuta = naNovcanik?.valuta?.takeIf { it.kod != osnovna.kod }
+    androidx.compose.runtime.LaunchedEffect(stranaValuta?.kod) { if (stranaValuta != null) onOsvjezi() }
     var iznos by remember { mutableStateOf("") }
     var opis by remember { mutableStateOf("") }
     var trenutak by remember { mutableStateOf(LocalDateTime.now().withSecond(0).withNano(0)) }
@@ -211,12 +229,12 @@ fun PrijenosSheet(racuni: List<Racun>, onSpremi: (String, String, Long, Long, St
     var greska by remember { mutableStateOf<String?>(null) }
 
     NeonSheet(onZatvori) {
-        ZaglavljeSheeta("Prijenos između računa", onZatvori)
-        Text("Prijenos mijenja stanja računa, ali se ne broji kao prihod ni trošak.", style = Tip.malo)
+        ZaglavljeSheeta(if (ciljevi.isEmpty() && novcanici.isEmpty()) "Prijenos između računa" else "Prijenos", onZatvori)
+        Text("Prijenos mijenja stanja računa i štednje, ali se ne broji kao prihod ni trošak.", style = Tip.malo)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            OznakaPolja("Iznos (€)")
+            OznakaPolja("Iznos (${Novac.simbol})")
             NeonPolje(
-                iznos, { iznos = it; greska = null }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true, visina = 64.dp,
+                iznos, { iznos = it; greska = null; if (!primljenoRucno) primljeno = "" }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true, visina = 64.dp,
                 stil = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Neon.Cijan, fontFeatureSettings = "tnum"),
             )
         }
@@ -229,7 +247,58 @@ fun PrijenosSheet(racuni: List<Racun>, onSpremi: (String, String, Long, Long, St
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OznakaPolja("Na račun")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                racuni.forEach { r -> NeonChip(r.naziv, na == r.naziv, { na = r.naziv; greska = null }, boja = Neon.Zelena) }
+                racuni.forEach { r ->
+                    NeonChip(r.naziv, na == r.naziv && naCilj == null && naNovcanik == null, {
+                        na = r.naziv; naCilj = null; naNovcanik = null; greska = null
+                    }, boja = Neon.Zelena)
+                }
+            }
+        }
+        if (ciljevi.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OznakaPolja("Na cilj štednje")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ciljevi.forEach { c ->
+                        NeonChip(c.naziv, naCilj?.id == c.id, { naCilj = c; naNovcanik = null; greska = null }, boja = hexBoja(c.bojaHex))
+                    }
+                }
+            }
+        }
+        if (novcanici.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OznakaPolja("Na štednju u valuti")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    novcanici.forEach { n ->
+                        NeonChip(if (n.novcanik.naziv.equals(n.valuta.kod, true)) n.novcanik.naziv else "${n.novcanik.naziv} (${n.valuta.kod})", naNovcanik?.novcanik?.id == n.novcanik.id, {
+                            naNovcanik = n; naCilj = null; primljeno = ""; primljenoRucno = false; greska = null
+                        }, boja = bojaValute(n.valuta))
+                    }
+                }
+            }
+        }
+        // Kupnja strane valute ili kriptovalute: koliko stiže u novčanik (predloženo po današnjem tečaju)
+        if (stranaValuta != null) {
+            val c = Novac.parsiraj(iznos)
+            val predlozeno = c?.let { t.pretvori(it, osnovna, stranaValuta) }
+            androidx.compose.runtime.LaunchedEffect(c, predlozeno) {
+                if (!primljenoRucno && predlozeno != null) {
+                    primljeno = hr.smartbudget.app.domain.Valute.parsiraj(
+                        java.math.BigDecimal.valueOf(predlozeno).setScale(stranaValuta.decimale, java.math.RoundingMode.HALF_DOWN).toPlainString(), stranaValuta,
+                    )?.let { j -> if (stranaValuta.decimale == 2) Novac.broj(j) else hr.smartbudget.app.domain.Valute.iznosBezOznake(j, stranaValuta.decimale) } ?: ""
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OznakaPolja("Stiže u novčanik (${stranaValuta.kod})")
+                NeonPolje(
+                    primljeno, { primljeno = it; primljenoRucno = true; greska = null }, Modifier.fillMaxWidth(),
+                    placeholder = if (stranaValuta.kripto) "0,00000000" else "0,00", uCentima = true, decimale = stranaValuta.decimale,
+                )
+                Text(
+                    if (predlozeno != null) "Predloženo po današnjem tečaju; upišite točan iznos ako se razlikuje (npr. zbog provizije)."
+                    else if (t.ucitava) "Dohvaćam tečaj…" else "Tečaj nije dostupan; upišite koliko stiže u novčanik.",
+                    style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, lineHeight = 16.sp),
+                )
+                IzvorTecajeva(t, kripto = stranaValuta.kripto, fiat = !stranaValuta.kripto || osnovna.kod != "EUR")
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -241,7 +310,17 @@ fun PrijenosSheet(racuni: List<Racun>, onSpremi: (String, String, Long, Long, St
         PrimarniGumb("Prenesi", onClick = {
             val c = Novac.parsiraj(iznos)
             when {
-                c == null || c <= 0 -> greska = "Unesite iznos veći od 0,00 €."
+                c == null || c <= 0 -> greska = "Unesite iznos veći od 0,00 ${Novac.simbol}."
+                s != null && (naCilj != null || naNovcanik != null) -> {
+                    val j = when {
+                        naNovcanik == null -> 0L
+                        stranaValuta == null -> c
+                        else -> hr.smartbudget.app.domain.Valute.parsiraj(primljeno, stranaValuta) ?: 0L
+                    }
+                    if (naNovcanik != null && j <= 0) { greska = "Upišite koliko stiže u novčanik."; return@PrimarniGumb }
+                    onNaStednju(s!!, c, trenutak.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), opis.trim(), naCilj, naNovcanik?.novcanik, j)
+                    onZatvori()
+                }
                 s == null || na == null -> greska = "Odaberite oba računa."
                 s == na -> greska = "Odaberite dva različita računa."
                 else -> {

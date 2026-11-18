@@ -410,7 +410,7 @@ private fun HeroKartica(s: PocetnaStanje, privatnost: StanjePostavki, onPregled:
         var otkriveno by remember { mutableStateOf(false) }
         val sakrijStanje = privatnost.sakrijStanje && !otkriveno
         val sakrijPrihod = privatnost.sakrijPrihod && !otkriveno
-        val iznos = if (sakrijStanje) "••••" else Novac.stanje(neto).removeSuffix(" €")
+        val iznos = if (sakrijStanje) "••••" else Novac.stanje(neto).removeSuffix(" " + Novac.simbol)
         Text(
             modifier = Modifier.clickable(
                 enabled = privatnost.sakrijStanje || privatnost.sakrijPrihod,
@@ -418,7 +418,7 @@ private fun HeroKartica(s: PocetnaStanje, privatnost: StanjePostavki, onPregled:
             ) { otkriveno = !otkriveno },
             text = buildAnnotatedString {
                 append(iznos)
-                withStyle(SpanStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold)) { append(" €") }
+                withStyle(SpanStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold)) { append(" " + Novac.simbol) }
             },
             style = TextStyle(
                 fontSize = 46.sp, fontWeight = FontWeight.ExtraBold, color = netoBoja, letterSpacing = (-0.9).sp,

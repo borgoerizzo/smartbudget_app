@@ -38,7 +38,7 @@ fun ObavijestInfoDijalog(info: InfoObavijesti, stanjeCenti: Long, onAkcija: () -
             "Na dan naplate aplikacija je sama upisala ponavljajući prihod ili trošak, isto kao da ste ga unijeli ručno. " +
                 "Pravila (iznos, dan, pauza) uređujete u Budžetima → Ponavljajući unosi."
         VrstaObavijesti.MINUS ->
-            "Ukupno stanje svih računa palo je ispod 0 €. Obavijest stiže jednom, u trenutku prelaska iz plusa u minus. " +
+            "Ukupno stanje svih računa palo je ispod 0 ${Novac.simbol}. Obavijest stiže jednom, u trenutku prelaska iz plusa u minus. " +
                 "Minus se prenosi u sljedeći ciklus i umanjuje nove prihode."
         VrstaObavijesti.PROGNOZA ->
             "Uz dosadašnji dnevni tempo potrošnje u ovoj kategoriji limit će biti prekoračen prije kraja ciklusa. " +

@@ -16,7 +16,7 @@ android {
         minSdk = 26
         targetSdk = 37
         // Verzija: +0.1 za novu funkcionalnost ili veći ispravak, +0.001 za manju korekciju.
-        versionName = "2.304"
+        versionName = "2.600"
         // Iz naziva, tako da svaka nova verzija raste i za Android (1.000 → 1000, 1.101 → 1101).
         versionCode = versionName!!.split('.').let { (a, b) -> a.toInt() * 1000 + b.toInt() }
 
@@ -61,5 +61,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
+    // org.json za testove parsiranja tečajeva (na uređaju je dio Androida)
+    testImplementation("org.json:json:20240303")
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

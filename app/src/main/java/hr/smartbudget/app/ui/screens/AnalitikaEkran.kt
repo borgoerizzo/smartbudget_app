@@ -85,6 +85,13 @@ fun AnalitikaEkran(
     onBrojCiklusa: (Int) -> Unit,
     godisnji: GodisnjiPregled?,
     onGodina: (Int) -> Unit,
+    /** Kartice štednje i kriptovaluta; prikazuju se samo kad postoje podaci. */
+    imaCiljeva: Boolean = false,
+    ciljevi: @Composable () -> Unit = {},
+    imaStednje: Boolean = false,
+    stednja: @Composable () -> Unit = {},
+    imaKripta: Boolean = false,
+    kripto: @Composable () -> Unit = {},
 ) {
     LazyColumn(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
@@ -107,6 +114,9 @@ fun AnalitikaEkran(
         item { FiksniKartica(s) }
         item { StednjaKartica(s) }
         item { NaziviKartica(s) }
+        if (imaCiljeva) item { ciljevi() }
+        if (imaStednje) item { stednja() }
+        if (imaKripta) item { kripto() }
     }
 }
 
@@ -221,7 +231,7 @@ private fun GrafTijeka(s: AnalitikaStanje, odabrani: Int, onOdabir: (Int) -> Uni
         drawIntoCanvas {
             labelPaint.textAlign = android.graphics.Paint.Align.RIGHT
             labelPaint.color = Neon.Crvena.toArgb()
-            it.nativeCanvas.drawText("0 €", size.width, y(0.0) - 4.dp.toPx(), labelPaint)
+            it.nativeCanvas.drawText("0 ${Novac.simbol}", size.width, y(0.0) - 4.dp.toPx(), labelPaint)
             labelPaint.color = Neon.TekstSiv.toArgb()
         }
         // Oznake osi X: početak, sredina, kraj

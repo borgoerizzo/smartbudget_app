@@ -167,6 +167,8 @@ fun NeonPolje(
      * brisanje miče zadnju znamenku. Vrijednost je uvijek formatirana (1.250,00), kursor stoji na kraju.
      */
     uCentima: Boolean = false,
+    /** Broj decimala za unos s desna (2 za novac, 8 za kriptovalute). */
+    decimale: Int = 2,
 ) {
     var fokus by remember { mutableStateOf(false) }
     val rub = when {
@@ -198,8 +200,14 @@ fun NeonPolje(
         BasicTextField(
             value = TextFieldValue(vrijednost, TextRange(vrijednost.length)),
             onValueChange = { novo ->
-                val znamenke = novo.text.filter { it.isDigit() }.trimStart('0').take(11)
-                onPromjena(if (znamenke.isEmpty()) "" else Novac.broj(znamenke.toLong()))
+                val znamenke = novo.text.filter { it.isDigit() }.trimStart('0').take(9 + decimale)
+                onPromjena(
+                    when {
+                        znamenke.isEmpty() -> ""
+                        decimale == 2 -> Novac.broj(znamenke.toLong())
+                        else -> hr.smartbudget.app.domain.Valute.iznosBezOznake(znamenke.toLong(), decimale)
+                    },
+                )
             },
             singleLine = true, textStyle = stil, cursorBrush = SolidColor(fokusBoja),
             keyboardOptions = tipkovnicaOpcije, modifier = mod, decorationBox = ukras,
@@ -368,7 +376,7 @@ fun TransakcijaSheet(
             boje = listOf(Neon.Crvena, Neon.Zelena),
         )
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            OznakaPolja("Iznos (€)")
+            OznakaPolja("Iznos (${Novac.simbol})")
             NeonPolje(
                 iznos, { iznos = it; greska = null },
                 Modifier.fillMaxWidth().focusRequester(fokusIznosa),
@@ -544,7 +552,7 @@ fun TransakcijaSheet(
             onClick = {
             val centi = Novac.parsiraj(iznos)
             when {
-                centi == null || centi <= 0 -> greska = "Unesite iznos veći od 0,00 €."
+                centi == null || centi <= 0 -> greska = "Unesite iznos veći od 0,00 ${Novac.simbol}."
                 dijeli && onSpremiPodijeljeno != null -> {
                     val iznosi = dijelovi.map { Novac.parsiraj(it.second) ?: 0L }
                     when {
@@ -860,7 +868,7 @@ fun KategorijaSheet(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
-                        OznakaPolja("Limit po ciklusu (€)")
+                        OznakaPolja("Limit po ciklusu (${Novac.simbol})")
                         Text("Prazno = bez limita", style = Tip.malo.copy(fontSize = 12.sp))
                     }
                     NeonPolje(
@@ -881,8 +889,8 @@ fun KategorijaSheet(
                     colors = SliderDefaults.colors(thumbColor = Neon.Tekst, activeTrackColor = c, inactiveTrackColor = Color(0x1AFFFFFF)),
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("0 €", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
-                    Text("1.000 €", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+                    Text("0 ${Novac.simbol}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+                    Text("1.000 ${Novac.simbol}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
                 }
                 Novac.parsiraj(limit)?.takeIf { it > 0 }?.let {
                     Text("Upozorenje pri 80 % limita (${Novac.eur(it * 8 / 10)}) i pri prekoračenju.", style = Tip.malo.copy(fontSize = 12.sp))

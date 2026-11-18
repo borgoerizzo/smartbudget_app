@@ -43,6 +43,11 @@ import hr.smartbudget.app.data.CiljStednje
 import hr.smartbudget.app.data.Racun
 import hr.smartbudget.app.ui.screens.CiljSheet
 import hr.smartbudget.app.ui.screens.UplataCiljaSheet
+import hr.smartbudget.app.ui.screens.NovcanikSheet
+import hr.smartbudget.app.ui.screens.StednjaAnalitikaKartica
+import hr.smartbudget.app.ui.screens.CiljeviAnalitikaKartica
+import hr.smartbudget.app.ui.screens.KriptoAnalitikaKartica
+import hr.smartbudget.app.ui.screens.KalkulatorValutaSheet
 import hr.smartbudget.app.ui.screens.PotvrdaBrisanja
 import hr.smartbudget.app.ui.screens.PrijenosSheet
 import hr.smartbudget.app.ui.screens.RacunSheet
@@ -130,6 +135,9 @@ private sealed interface Sheet {
     data class Cilj(val c: CiljStednje?) : Sheet
     /** Uplata na cilj (ili povlačenje). */
     data class UplataCilja(val c: CiljStednje, val uplata: Boolean) : Sheet
+    /** Novčanik štednje u valuti; null id = novi. */
+    data class NovcanikS(val id: Long?) : Sheet
+    data object Kalkulator : Sheet
 }
 
 @Composable
@@ -181,6 +189,9 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
     val ciljevi by vm.ciljevi.collectAsState()
     val uplate by vm.uplate.collectAsState()
     val visakProslog by vm.visakProslogCiklusa.collectAsState()
+    val novcanici by vm.novcanici.collectAsState()
+    val tecajevi by vm.tecajevi.collectAsState()
+    val kriptoPovijest by vm.kriptoPovijest.collectAsState()
     val zadnjiUnosi by vm.zadnjiUnosi.collectAsState()
     val godisnji by vm.godisnji.collectAsState()
     val naziviRacuna = racuni.map { it.naziv }
@@ -212,7 +223,15 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onNoviRacun = { sheet = Sheet.RacunS(null) },
                 onPrijenos = { sheet = Sheet.Prijenos },
             )
-            Ekran.ANALITIKA -> AnalitikaEkran(analitika, vm::prethodniCiklus, vm::sljedeciCiklus, vm::trenutniCiklus, vm::postaviBrojCiklusa, godisnji, vm::postaviGodinu)
+            Ekran.ANALITIKA -> AnalitikaEkran(
+                analitika, vm::prethodniCiklus, vm::sljedeciCiklus, vm::trenutniCiklus, vm::postaviBrojCiklusa, godisnji, vm::postaviGodinu,
+                imaCiljeva = ciljevi.isNotEmpty(),
+                ciljevi = { CiljeviAnalitikaKartica(ciljevi, uplate, tecajevi, vm::osvjeziTecajeve) },
+                imaStednje = ciljevi.isNotEmpty() || novcanici.isNotEmpty(),
+                stednja = { StednjaAnalitikaKartica(ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve) },
+                imaKripta = novcanici.any { it.valuta.kripto },
+                kripto = { KriptoAnalitikaKartica(novcanici, tecajevi, kriptoPovijest, vm::osvjeziTecajeve, vm::osvjeziKriptoPovijest) },
+            )
             Ekran.BUDZETI -> BudzetiEkran(
                 budzeti, ponavljajuci,
                 onNova = { sheet = Sheet.Kategorije(null) },
@@ -223,6 +242,13 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onNoviCilj = { sheet = Sheet.Cilj(null) },
                 onUrediCilj = { sheet = Sheet.Cilj(it) },
                 onUplatiCilj = { c, u -> sheet = Sheet.UplataCilja(c, u) },
+                novcanici = novcanici,
+                tecajevi = tecajevi,
+                onOsvjeziTecajeve = vm::osvjeziTecajeve,
+                onNoviNovcanik = { sheet = Sheet.NovcanikS(null) },
+                onNovcanik = { sheet = Sheet.NovcanikS(it.novcanik.id) },
+                onKalkulator = { sheet = Sheet.Kalkulator },
+                uplateCiljeva = uplate,
             )
             Ekran.POSTAVKE -> PostavkeEkran(vm)
         }
@@ -263,14 +289,27 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
             zadnjiUnosi = zadnjiUnosi,
         )
         is Sheet.RacunS -> RacunSheet(s.r, vm::spremiRacun, vm::obrisiRacun) { sheet = null }
-        Sheet.Prijenos -> PrijenosSheet(racuni, vm::prijenos) { sheet = null }
+        Sheet.Prijenos -> PrijenosSheet(
+            racuni, vm::prijenos, { sheet = null },
+            ciljevi = ciljevi, novcanici = novcanici, t = tecajevi, onOsvjezi = vm::osvjeziTecajeve,
+            onNaStednju = vm::prijenosNaStednju,
+        )
         is Sheet.PrijenosInfo -> PotvrdaBrisanja(
             "Obrisati prijenos?",
             "${s.t.opis} · ${hr.smartbudget.app.domain.Novac.eur(s.t.iznosCenti)}\nBrišu se oba dijela prijenosa.",
             { sheet = null },
         ) { vm.obrisiTransakciju(s.t); sheet = null }
-        is Sheet.Cilj -> CiljSheet(s.c, uplate, vm::spremiCilj, vm::obrisiCilj) { sheet = null }
-        is Sheet.UplataCilja -> UplataCiljaSheet(s.c, s.uplata, visakProslog, { vm.uplatiNaCilj(s.c, it) }) { sheet = null }
+        is Sheet.Cilj -> CiljSheet(s.c, uplate, vm::spremiCilj, vm::obrisiCilj, { sheet = null }, vm::obrisiUplatuCilja)
+        is Sheet.NovcanikS -> NovcanikSheet(
+            novcanici.firstOrNull { it.novcanik.id == s.id }, tecajevi,
+            vm::spremiNovcanik, vm::obrisiNovcanik, vm::dodajPromjenu, vm::obrisiPromjenu,
+        ) { sheet = null }
+        Sheet.Kalkulator -> KalkulatorValutaSheet(novcanici, ciljevi, tecajevi, vm::osvjeziTecajeve, uplate) { sheet = null }
+        is Sheet.UplataCilja -> UplataCiljaSheet(
+            s.c, s.uplata, visakProslog, { vm.uplatiNaCilj(s.c, it) }, { sheet = null },
+            uplate = uplate, t = tecajevi, onOsvjezi = vm::osvjeziTecajeve,
+            onUValuti = { j, v -> vm.uplatiNaCiljUValuti(s.c, j, v) },
+        )
         is Sheet.Pregled -> PregledSheet(
             tip = s.tip,
             ciklus = pocetna.ciklus,

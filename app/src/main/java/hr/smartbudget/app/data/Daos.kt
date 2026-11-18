@@ -209,11 +209,56 @@ interface UplataDao {
     @Insert
     suspend fun umetni(lista: List<UplataCilja>)
 
+    @Delete
+    suspend fun obrisi(u: UplataCilja)
+
     @Query("DELETE FROM uplate_cilja WHERE ciljId = :ciljId")
     suspend fun obrisiZaCilj(ciljId: Long)
 
     @Query("DELETE FROM uplate_cilja")
     suspend fun obrisiSve()
+}
+
+@Dao
+interface NovcanikDao {
+    @Query("SELECT * FROM novcanici ORDER BY redoslijed, id")
+    fun promatrajSve(): Flow<List<Novcanik>>
+
+    @Query("SELECT * FROM novcanici")
+    suspend fun sve(): List<Novcanik>
+
+    @Upsert
+    suspend fun spremi(n: Novcanik): Long
+
+    @Delete
+    suspend fun obrisi(n: Novcanik)
+
+    @Insert
+    suspend fun umetni(lista: List<Novcanik>)
+
+    @Query("DELETE FROM novcanici")
+    suspend fun obrisiSve()
+
+    @Query("SELECT * FROM promjene_novcanika ORDER BY epochDan DESC, id DESC")
+    fun promatrajPromjene(): Flow<List<PromjenaNovcanika>>
+
+    @Query("SELECT * FROM promjene_novcanika")
+    suspend fun svePromjene(): List<PromjenaNovcanika>
+
+    @Insert
+    suspend fun umetniPromjenu(p: PromjenaNovcanika): Long
+
+    @Insert
+    suspend fun umetniPromjene(lista: List<PromjenaNovcanika>)
+
+    @Delete
+    suspend fun obrisiPromjenu(p: PromjenaNovcanika)
+
+    @Query("DELETE FROM promjene_novcanika WHERE novcanikId = :id")
+    suspend fun obrisiPromjeneZa(id: Long)
+
+    @Query("DELETE FROM promjene_novcanika")
+    suspend fun obrisiSvePromjene()
 }
 
 @Dao

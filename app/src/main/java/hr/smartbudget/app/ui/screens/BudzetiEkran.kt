@@ -62,6 +62,13 @@ fun BudzetiEkran(
     onNoviCilj: () -> Unit,
     onUrediCilj: (CiljStednje) -> Unit,
     onUplatiCilj: (CiljStednje, Boolean) -> Unit,
+    novcanici: List<hr.smartbudget.app.domain.StanjeNovcanika> = emptyList(),
+    tecajevi: hr.smartbudget.app.ui.StanjeTecajeva = hr.smartbudget.app.ui.StanjeTecajeva(),
+    onOsvjeziTecajeve: () -> Unit = {},
+    onNoviNovcanik: () -> Unit = {},
+    onNovcanik: (hr.smartbudget.app.domain.StanjeNovcanika) -> Unit = {},
+    onKalkulator: () -> Unit = {},
+    uplateCiljeva: List<hr.smartbudget.app.data.UplataCilja> = emptyList(),
 ) {
     LazyColumn(
         Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars),
@@ -79,7 +86,8 @@ fun BudzetiEkran(
         }
         item { UkupniLimit(s) }
         item { PonavljajuciKartica(ponavljajuci, onNoviPonavljajuci, onUrediPonavljajuci) }
-        item { CiljeviKartica(ciljevi, onNoviCilj, onUrediCilj, onUplatiCilj) }
+        item { CiljeviKartica(ciljevi, onNoviCilj, onUrediCilj, onUplatiCilj, uplateCiljeva, tecajevi, onOsvjeziTecajeve) }
+        item { NovcaniciKartica(novcanici, tecajevi, onOsvjeziTecajeve, onNoviNovcanik, onNovcanik, onKalkulator) }
         item {
             Column(Modifier.padding(horizontal = 4.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Limiti po kategorijama", style = Tip.naslovKartice.copy(fontSize = 18.sp))

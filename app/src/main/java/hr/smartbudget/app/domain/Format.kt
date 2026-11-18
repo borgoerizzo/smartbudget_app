@@ -20,7 +20,11 @@ object Novac {
 
     const val MINUS = "−"
 
-    fun eur(centi: Long): String = fmt().format(BigDecimal.valueOf(centi, 2)) + " €"
+    /** Oznaka osnovne valute aplikacije (postavlja se iz Postavki); iznosi se ne preračunavaju. */
+    @Volatile var simbol: String = "€"
+    @Volatile var kodValute: String = "EUR"
+
+    fun eur(centi: Long): String = fmt().format(BigDecimal.valueOf(centi, 2)) + " " + simbol
 
     /** S predznakom: +1.250,00 € ili −45,80 €. */
     fun predznak(centi: Long): String = when {
@@ -37,7 +41,7 @@ object Novac {
 
     /** Parsira korisnički unos ("1.250,5", "45.80", "12") u cente; null ako nije ispravno. */
     fun parsiraj(unos: String): Long? {
-        var s = unos.trim().replace(" ", "").replace("€", "")
+        var s = unos.trim().replace(" ", "").replace("€", "").replace(simbol, "")
         if (s.isEmpty()) return null
         val zadnjiZarez = s.lastIndexOf(',')
         val zadnjaTocka = s.lastIndexOf('.')

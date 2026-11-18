@@ -28,7 +28,7 @@ import java.time.ZoneId
  * Zajedničko mjesto za upis podataka (aplikacija i brzi unos s widgeta).
  * Nakon svake promjene osvježava widget na početnom zaslonu.
  */
-class BudgetRepository private constructor(private val context: Context) {
+class BudgetRepository private constructor(val context: Context) {
     val db = BudgetDatabase.get(context)
     private val tDao = db.transakcije()
     private val kDao = db.kategorije()
@@ -123,6 +123,36 @@ class BudgetRepository private constructor(private val context: Context) {
         promjena()
     }
 
+    /**
+     * Prijenos s računa na štednju: odljev s računa (prijenos, ne broji se kao trošak) i uplata na cilj
+     * ili u novčanik. [jedinice] je iznos u valuti novčanika (za cilj se ne koristi).
+     */
+    suspend fun prijenosNaStednju(
+        s: String, iznosCenti: Long, kada: Long, opis: String,
+        cilj: CiljStednje?, novcanik: Novcanik?, jedinice: Long,
+    ) {
+        val kat = kategorijaPrijenosa()
+        val odrediste = cilj?.naziv ?: novcanik?.naziv ?: ""
+        val naziv = opis.ifBlank { "Prijenos na štednju: $odrediste" }
+        val dan = java.time.Instant.ofEpochMilli(kada).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
+        db.withTransaction {
+            tDao.spremi(Transakcija(tip = TipTransakcije.TROSAK, iznosCenti = iznosCenti, datumVrijeme = kada, kategorijaId = kat, opis = naziv, nacinPlacanja = s, jePrijenos = true, grupaId = System.currentTimeMillis()))
+            if (cilj != null) {
+                db.ciljevi().sve().firstOrNull { it.id == cilj.id }?.let { c ->
+                    db.ciljevi().spremi(c.copy(ustedjenoCenti = c.ustedjenoCenti + iznosCenti))
+                    db.uplate().umetni(UplataCilja(ciljId = c.id, iznosCenti = iznosCenti, epochDan = dan))
+                }
+            }
+            if (novcanik != null) {
+                val kripto = hr.smartbudget.app.domain.Valute.po(novcanik.valuta).kripto
+                db.novcanici().umetniPromjenu(
+                    PromjenaNovcanika(novcanikId = novcanik.id, jedinice = jedinice, epochDan = dan, ulozenoCenti = if (kripto) iznosCenti else null, napomena = "s računa $s"),
+                )
+            }
+        }
+        promjena()
+    }
+
     /** Sprema račun; kod promjene naziva preimenuje ga i u svim njegovim transakcijama. */
     suspend fun spremiRacun(r: Racun, stariNaziv: String?) {
         db.withTransaction {
@@ -193,6 +223,24 @@ class BudgetRepository private constructor(private val context: Context) {
         if (razlika != 0L) db.uplate().umetni(UplataCilja(ciljId = id, iznosCenti = razlika, epochDan = danas))
     }.also { BackupManager.get(context).nakonPromjene() }
 
+    /**
+     * Briše pogrešno unesenu uplatu (ili povlačenje) s cilja. Uplata u osnovnoj valuti
+     * mijenja i ušteđeni iznos cilja; strane valute se računaju iz samih uplata.
+     */
+    suspend fun obrisiUplatuCilja(u: UplataCilja) = db.withTransaction {
+        if (u.valuta == null) {
+            db.ciljevi().sve().firstOrNull { it.id == u.ciljId }?.let { c ->
+                db.ciljevi().spremi(c.copy(ustedjenoCenti = (c.ustedjenoCenti - u.iznosCenti).coerceAtLeast(0)))
+            }
+        }
+        db.uplate().obrisi(u)
+    }.also { BackupManager.get(context).nakonPromjene() }
+
+    /** Uplata ili povlačenje na cilj u stranoj valuti / kriptovaluti (iznos u najmanjim jedinicama te valute). */
+    suspend fun uplatiNaCiljUValuti(c: CiljStednje, jedinice: Long, valuta: String) =
+        db.uplate().umetni(UplataCilja(ciljId = c.id, iznosCenti = jedinice, epochDan = LocalDate.now().toEpochDay(), valuta = valuta))
+            .also { BackupManager.get(context).nakonPromjene() }
+
     /** Uplata (pozitivna) ili povlačenje (negativno) na cilj. */
     suspend fun uplatiNaCilj(c: CiljStednje, iznosCenti: Long) = db.withTransaction {
         val trenutni = db.ciljevi().sve().firstOrNull { it.id == c.id } ?: return@withTransaction
@@ -200,6 +248,19 @@ class BudgetRepository private constructor(private val context: Context) {
         db.ciljevi().spremi(trenutni.copy(ustedjenoCenti = novo))
         db.uplate().umetni(UplataCilja(ciljId = c.id, iznosCenti = novo - trenutni.ustedjenoCenti, epochDan = LocalDate.now().toEpochDay()))
     }.also { BackupManager.get(context).nakonPromjene() }
+
+    // --- Novčanici (štednja u valutama i kriptovalutama) ---
+
+    suspend fun spremiNovcanik(n: Novcanik): Long = db.novcanici().spremi(n).let { if (n.id == 0L) it else n.id }
+        .also { BackupManager.get(context).nakonPromjene() }
+
+    suspend fun obrisiNovcanik(n: Novcanik) = db.withTransaction {
+        db.novcanici().obrisiPromjeneZa(n.id)
+        db.novcanici().obrisi(n)
+    }.also { BackupManager.get(context).nakonPromjene() }
+
+    suspend fun dodajPromjenu(p: PromjenaNovcanika) = db.novcanici().umetniPromjenu(p).also { BackupManager.get(context).nakonPromjene() }
+    suspend fun obrisiPromjenu(p: PromjenaNovcanika) = db.novcanici().obrisiPromjenu(p).also { BackupManager.get(context).nakonPromjene() }
 
     suspend fun obrisiCilj(c: CiljStednje) = db.withTransaction {
         db.uplate().obrisiZaCilj(c.id)

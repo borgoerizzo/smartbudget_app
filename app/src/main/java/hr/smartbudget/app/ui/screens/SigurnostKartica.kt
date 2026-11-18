@@ -1,5 +1,6 @@
 package hr.smartbudget.app.ui.screens
 
+import hr.smartbudget.app.domain.Novac
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -202,7 +203,7 @@ fun ObavijestiKartica(vm: BudgetViewModel) {
         ) { if (it) ukljuci { postavke.postaviObavijestPonavljajuci(true) } else postavke.postaviObavijestPonavljajuci(false) }
         RedakPrekidac(
             "warn", Neon.Crvena, "Stanje u minusu",
-            "Upozorenje kad stanje računa padne ispod 0 €",
+            "Upozorenje kad stanje računa padne ispod 0 ${Novac.simbol}",
             p.obavijestMinus,
             onTest = { ukljuci { Obavijesti.test(ctx, VrstaObavijesti.MINUS) } },
         ) { if (it) ukljuci { postavke.postaviObavijestMinus(true) } else postavke.postaviObavijestMinus(false) }

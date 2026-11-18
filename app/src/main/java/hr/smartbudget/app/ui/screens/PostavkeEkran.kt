@@ -237,7 +237,19 @@ fun PostavkeEkran(vm: BudgetViewModel) {
         item { NaslovGrupe("Općenito") }
         item {
             Kartica(padding = 0.dp, razmak = 0.dp) {
-                RedakPostavke("euro", "Valuta", "Euro (€)") {}
+                run {
+                    val appP = hr.smartbudget.app.data.AppPostavke.get(ctx)
+                    val st by appP.stanje.collectAsState()
+                    var biram by remember { mutableStateOf(false) }
+                    val v = hr.smartbudget.app.domain.Valute.po(st.valuta)
+                    RedakPostavke("euro", "Valuta aplikacije", "${v.naziv} (${v.simbol}) · dodirnite za promjenu") { biram = true }
+                    if (biram) BiracValuteDijalog(
+                        "Valuta aplikacije", hr.smartbudget.app.domain.Valute.fiat, st.valuta,
+                        "Svi unosi, limiti i stanja vode se u ovoj valuti. Postojeći iznosi se ne preračunavaju, mijenja se samo oznaka. " +
+                            "Štednju u drugim valutama i kriptovalutama dodajte u Budžeti → Štednja u valutama.",
+                        { appP.postaviValutu(it.kod); biram = false; vm.osvjeziWidget() },
+                    ) { biram = false }
+                }
                 Razdjelnik()
                 RedakPostavke("navGrid", "Widget na početnom zaslonu", "Stanje računa i brzi unos · dodirnite za dodavanje") {
                     if (!StanjeWidget.zatraziDodavanje(ctx)) vm.poruka("Pokretač ne podržava automatsko dodavanje. Dugo pritisnite početni zaslon → Widgeti → SmartBudget.")
