@@ -349,7 +349,7 @@ fun CiljeviAnalitikaKartica(
             PlocicaBroja("Ukupni cilj", Valute.iznos(ukupnoCilj / 100.0, osnovna), Neon.Tekst, Modifier.weight(1f))
             PlocicaBroja("Ostvareno", Novac.postotak(udio * 100.0, 0), Neon.Cijan, Modifier.weight(1f))
         }
-        TrakaNapretka(udio, Brush.horizontalGradient(listOf(Neon.Cijan, Neon.Zelena)), Neon.Zelena, visina = 8.dp)
+        TrakaNapretka(udio, ispunaNapretka(udio), bojaNapretka(udio), visina = 8.dp)
 
         if (tocke.size >= 3) {
             Text("Ušteđeno kroz vrijeme", style = Tip.tijelo.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold))
@@ -372,7 +372,7 @@ fun CiljeviAnalitikaKartica(
                     )
                     Text(Novac.postotak(a.udio * 100.0, 0), color = boja, fontWeight = FontWeight.Bold, fontSize = 14.sp, textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.width(44.dp))
                 }
-                TrakaNapretka(a.udio, Brush.horizontalGradient(listOf(boja, boja.copy(alpha = .7f))), boja, visina = 7.dp, marker = plan)
+                TrakaNapretka(a.udio, ispunaNapretka(a.udio), bojaNapretka(a.udio), visina = 7.dp, marker = plan)
                 val (tekst, b) = when (a.status) {
                     hr.smartbudget.app.domain.StatusCilja.DOSEGNUT -> "Dosegnut" to Neon.Zelena
                     hr.smartbudget.app.domain.StatusCilja.ISPRED_PLANA -> "Ispred plana ${Novac.eur(ust.centi - (a.ocekivanoDoSad ?: 0))}" to Neon.Zelena
@@ -397,4 +397,17 @@ fun CiljeviAnalitikaKartica(
             Text("Bijela oznaka na traci pokazuje koliko je po planu trebalo biti ušteđeno do danas.", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp))
         }
     }
+}
+
+/** Boja napretka prema cilju: crvena na početku, preko jantarne do zelene na cilju. */
+fun bojaNapretka(udio: Float): Color {
+    val t = udio.coerceIn(0f, 1f)
+    return if (t < .5f) androidx.compose.ui.graphics.lerp(Neon.Crvena, Neon.Jantar, t * 2)
+    else androidx.compose.ui.graphics.lerp(Neon.Jantar, Neon.Zelena, (t - .5f) * 2)
+}
+
+/** Ispuna trake: gradijent od crvene do boje trenutnog napretka (bliže cilju = zelenije). */
+fun ispunaNapretka(udio: Float): Brush {
+    val t = udio.coerceIn(0f, 1f)
+    return Brush.horizontalGradient(listOf(Neon.Crvena, bojaNapretka(t / 2), bojaNapretka(t)))
 }
