@@ -254,15 +254,26 @@ fun PostavkeEkran(vm: BudgetViewModel) {
                 run {
                     var provjeravam by remember { mutableStateOf(false) }
                     var nova by remember { mutableStateOf<hr.smartbudget.app.data.NovaVerzija?>(null) }
+                    // Rezultat zadnje provjere ostaje na samoj pločici, u boji, da se ne previdi.
+                    var rezultat by remember { mutableStateOf<Pair<String, Color>?>(null) }
                     RedakPostavke(
                         "download", "Provjeri ažuriranja",
-                        if (provjeravam) "Provjeravam…" else "Instalirana verzija ${BuildConfig.VERSION_NAME} · dodirnite za provjeru",
+                        when {
+                            provjeravam -> "Provjeravam…"
+                            rezultat != null -> rezultat!!.first
+                            else -> "Instalirana verzija ${BuildConfig.VERSION_NAME} · dodirnite za provjeru"
+                        },
+                        opisBoja = if (provjeravam) Neon.Cijan else rezultat?.second,
                     ) {
                         if (!provjeravam) scope.launch {
                             provjeravam = true
                             runCatching { hr.smartbudget.app.data.Azuriranja.provjeri() }
-                                .onSuccess { n -> if (n == null) vm.poruka("Imate najnoviju verziju (${BuildConfig.VERSION_NAME}).") else nova = n }
-                                .onFailure { vm.poruka("Provjera nije uspjela: ${it.message ?: "nema veze s internetom"}") }
+                                .onSuccess { n ->
+                                    rezultat = if (n == null) "✓ Imate najnoviju verziju (${BuildConfig.VERSION_NAME})" to Neon.Zelena
+                                    else "Dostupna je nova verzija ${n.naziv} · dodirnite za instalaciju" to Neon.Cijan
+                                    nova = n
+                                }
+                                .onFailure { rezultat = "Provjera nije uspjela: ${it.message ?: "nema veze s internetom"}" to Neon.Crvena }
                             provjeravam = false
                         }
                     }
@@ -368,7 +379,7 @@ private fun Razdjelnik() {
 }
 
 @Composable
-private fun RedakPostavke(ikona: String, naziv: String, opis: String, onClick: () -> Unit) {
+private fun RedakPostavke(ikona: String, naziv: String, opis: String, opisBoja: Color? = null, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -376,7 +387,10 @@ private fun RedakPostavke(ikona: String, naziv: String, opis: String, onClick: (
         PlocicaIkone(Ikone.ui(ikona), Neon.Jantar, 40.dp)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(naziv, style = Tip.tijelo)
-            Text(opis, style = Tip.malo)
+            Text(
+                opis,
+                style = if (opisBoja != null) Tip.malo.copy(color = opisBoja, fontWeight = FontWeight.SemiBold) else Tip.malo,
+            )
         }
     }
 }
