@@ -58,6 +58,17 @@ fun prijedloziZaNaziv(zadnje: List<TransakcijaSKategorijom>, upit: String, tip: 
         .take(koliko).toList()
 }
 
+/**
+ * Zadnji različiti nazivi unosa u kategoriji (najnoviji prvi), za brzi odabir čim se kategorija odabere.
+ * [zadnje] mora biti poredan od najnovijeg; prazni nazivi i prijenosi se preskaču.
+ */
+fun zadnjiNaziviKategorije(zadnje: List<TransakcijaSKategorijom>, kategorijaId: Long, koliko: Int = 3): List<String> =
+    zadnje.asSequence()
+        .filter { it.jeStvarna && it.kategorija.id == kategorijaId && it.transakcija.opis.isNotBlank() }
+        .map { it.transakcija.opis.trim() }
+        .distinctBy { Pretraga.normaliziraj(it) }
+        .take(koliko).toList()
+
 // --- Uvoz izvoda (CSV) ---
 
 data class CsvTablica(val zaglavlje: List<String>, val redovi: List<List<String>>)

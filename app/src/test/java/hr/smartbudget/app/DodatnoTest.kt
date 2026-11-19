@@ -6,6 +6,7 @@ import hr.smartbudget.app.data.Transakcija
 import hr.smartbudget.app.data.TransakcijaSKategorijom
 import hr.smartbudget.app.domain.UvozCsv
 import hr.smartbudget.app.domain.prijedloziZaNaziv
+import hr.smartbudget.app.domain.zadnjiNaziviKategorije
 import hr.smartbudget.app.domain.prognoza
 import hr.smartbudget.app.domain.prognozaPrekoracenja
 import hr.smartbudget.app.domain.zbroj
@@ -40,6 +41,17 @@ class DodatnoTest {
         val p = prijedloziZaNaziv(zadnje, "sp", TipTransakcije.TROSAK)
         assertEquals(listOf("Spar Zagreb", "Spin"), p.map { it.transakcija.opis })
         assertTrue(prijedloziZaNaziv(zadnje, "", TipTransakcije.TROSAK).isEmpty())
+    }
+
+    @Test fun zadnjaTriNazivaKategorije() {
+        val druga = Kategorija(id = 2, naziv = "Nea", bojaHex = "#FFFFFF", ikonaNaziv = "wallet", tip = TipTransakcije.TROSAK)
+        fun u(opis: String, k: Kategorija = druga, prijenos: Boolean = false) =
+            TransakcijaSKategorijom(Transakcija(tip = TipTransakcije.TROSAK, iznosCenti = 100, datumVrijeme = 0, kategorijaId = k.id, opis = opis, jePrijenos = prijenos), k)
+        // Najnoviji prvi; ponovljeni naziv (i s drugačijim velikim slovima) samo jednom; druge kategorije i prijenosi se preskaču.
+        val zadnje = listOf(u("Đeparac"), u("Spar", kat), u("Repeticije"), u("đeparac"), u("Prijenos", prijenos = true), u(""), u("Cigarete"), u("Kino"))
+        assertEquals(listOf("Đeparac", "Repeticije", "Cigarete"), zadnjiNaziviKategorije(zadnje, 2))
+        assertEquals(listOf("Spar"), zadnjiNaziviKategorije(zadnje, kat.id))
+        assertTrue(zadnjiNaziviKategorije(zadnje, 99).isEmpty())
     }
 
     @Test fun csvSaSeparatoromINavodnicima() {

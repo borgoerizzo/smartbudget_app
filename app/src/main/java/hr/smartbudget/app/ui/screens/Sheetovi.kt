@@ -75,6 +75,7 @@ import hr.smartbudget.app.data.Fotografije
 import hr.smartbudget.app.data.TransakcijaSKategorijom
 import hr.smartbudget.app.domain.Pretraga
 import hr.smartbudget.app.domain.prijedloziZaNaziv
+import hr.smartbudget.app.domain.zadnjiNaziviKategorije
 import hr.smartbudget.app.ui.TonalniGumb
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -213,8 +214,13 @@ fun NeonPolje(
             keyboardOptions = tipkovnicaOpcije, modifier = mod, decorationBox = ukras,
         )
     } else {
+        // Vlastito stanje s kursorom: kad se tekst promijeni izvana (npr. dodir na prijedlog naziva),
+        // kursor ide na kraj, a ne ostaje usred novog teksta.
+        var polje by remember { mutableStateOf(TextFieldValue(vrijednost, TextRange(vrijednost.length))) }
+        if (polje.text != vrijednost) polje = TextFieldValue(vrijednost, TextRange(vrijednost.length))
         BasicTextField(
-            value = vrijednost, onValueChange = onPromjena,
+            value = polje,
+            onValueChange = { novo -> polje = novo; if (novo.text != vrijednost) onPromjena(novo.text) },
             singleLine = true, textStyle = stil, cursorBrush = SolidColor(fokusBoja),
             keyboardOptions = tipkovnicaOpcije, modifier = mod, decorationBox = ukras,
         )
@@ -404,8 +410,38 @@ fun TransakcijaSheet(
                 opis, { opis = it; prijedlogOdabran = false }, Modifier.fillMaxWidth(),
                 placeholder = if (tip == TipTransakcije.PRIHOD) "npr. Plaća za listopad" else "npr. Tjedna nabava",
             )
+            // Čim je kategorija odabrana: zadnja tri naziva iz nje, uvijek vidljiva (i kad je u polje već nešto upisano).
+            // Dodir zamjenjuje upisani tekst; naziv koji je već u polju je istaknut.
+            val kategorija = if (dijeli) null else ponudjene.firstOrNull { it.id == kategorijaId }
+            val naziviKategorije = kategorija?.let { zadnjiNaziviKategorije(zadnjiUnosi, it.id) }.orEmpty()
+            if (kategorija != null && naziviKategorije.isNotEmpty()) {
+                val boja = hexBoja(kategorija.bojaHex)
+                Text("Zadnje u kategoriji ${kategorija.naziv}", style = Tip.oznaka.copy(fontSize = 11.sp, fontWeight = FontWeight.Normal))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    naziviKategorije.forEach { naziv ->
+                        val odabran = Pretraga.normaliziraj(naziv) == Pretraga.normaliziraj(opis)
+                        Row(
+                            Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(boja.copy(alpha = if (odabran) .32f else .14f))
+                                .then(if (odabran) Modifier.border(1.dp, boja.svjetlija().copy(alpha = .7f), RoundedCornerShape(14.dp)) else Modifier)
+                                .clickable(onClickLabel = "Upiši naziv $naziv") {
+                                    opis = naziv
+                                    prijedlogOdabran = true
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Ikone.ui("clock"), null, Modifier.size(13.dp), tint = boja.svjetlija())
+                            Text(" $naziv", color = if (odabran) Neon.Tekst else Neon.TekstSvijetliSiv, fontSize = 12.sp, maxLines = 1)
+                        }
+                    }
+                }
+            }
             // Prijedlozi iz prethodnih unosa: naziv i kategorija jednim dodirom (iznos je svaki put drugačiji).
-            val prijedlozi = if (prijedlogOdabran) emptyList() else prijedloziZaNaziv(zadnjiUnosi, opis, tip)
+            val vecPonudjeni = naziviKategorije.map { Pretraga.normaliziraj(it) }.toSet()
+            val prijedlozi = if (prijedlogOdabran) emptyList()
+            else prijedloziZaNaziv(zadnjiUnosi, opis, tip).filter { Pretraga.normaliziraj(it.transakcija.opis) !in vecPonudjeni }
             if (prijedlozi.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     prijedlozi.forEach { pr ->
