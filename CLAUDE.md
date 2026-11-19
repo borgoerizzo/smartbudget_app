@@ -1,3 +1,20 @@
+## Verzije i izdanja
+
+- Verzija je u `app/build.gradle.kts` (`versionName = "A.BBB"`, `versionCode` se računa sam).
+  - Manje izmjene: +0.001 (npr. 3.000 → 3.001). Korisnik može odbiti ažuriranje.
+  - Veće izmjene / nova funkcionalnost: +0.1 na sljedeću desetinku (npr. 3.004 → 3.100). Ažuriranje je obavezno.
+  - Pravilo obaveznosti je u `data/Azuriranja.kt` (`obavezno`): mijenja li se prva decimala.
+- Svaka nova verzija se objavljuje na GitHub repozitoriju https://github.com/borgoerizzo/smartbudget_app.git,
+  ali **uvijek prvo pitaj korisnika želi li upload** (commit, push i izdanje). Nikad ne objavljuj bez izričitog "da".
+- Aplikacija nove verzije traži preko GitHub Releases tog repozitorija (`releases/latest`), pa svako izdanje mora imati:
+  - oznaku (tag) `vA.BBB`, npr. `v3.001`
+  - opis izdanja = popis izmjena na hrvatskom (prikazuje se korisniku u aplikaciji), npr. redci `- …`
+  - priloženi potpisani release APK `SmartBudget-A.BBB.apk`
+- Release build: `gradlew assembleRelease` (JAVA_HOME = Android Studio `jbr`). Potpisuje se ključem
+  `C:/Users/Korisnik/kljucevi/smartbudget.jks`; putanja i lozinke su u `keystore.properties` (nije na gitu).
+  Bez tog ključa ažuriranja se ne mogu instalirati preko postojeće aplikacije. Gotove APK-ove kopiraj u `izdanja/`.
+- Nova verzija baze (Room) uvijek dobiva migraciju; nikad `fallbackToDestructiveMigration`.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

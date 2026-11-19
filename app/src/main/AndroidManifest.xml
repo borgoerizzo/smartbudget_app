@@ -3,6 +3,8 @@
 
     <!-- Tečajevi HNB-a i cijene kriptovaluta (CoinGecko) -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Instalacija preuzetog ažuriranja (sustav svaki put traži potvrdu korisnika). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Podsjetnik i tjedni pregled u točno zadano vrijeme -->

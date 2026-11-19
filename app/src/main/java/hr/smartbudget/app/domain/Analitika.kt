@@ -29,6 +29,11 @@ fun List<TransakcijaSKategorijom>.zbroj(): Zbroj = Zbroj(
     troskovi = filter { it.jeStvarna && it.transakcija.tip == TipTransakcije.TROSAK }.sumOf { it.transakcija.iznosCenti },
 )
 
+/** Neto prebačeno na štednju (prijenosi na štednju − povlačenja natrag na račun). */
+fun List<TransakcijaSKategorijom>.naStednju(): Long = filter { it.transakcija.naStednju }.sumOf {
+    if (it.transakcija.tip == TipTransakcije.TROSAK) it.transakcija.iznosCenti else -it.transakcija.iznosCenti
+}
+
 enum class StatusLimita { BEZ_LIMITA, SIGURNO, BLIZU, PREKORACENO }
 
 /** Prag upozorenja (80 %) i prekoračenja (100 %) limita kategorije. */

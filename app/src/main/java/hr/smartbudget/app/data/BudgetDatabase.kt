@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class,
         PrilagodbaCiklusa::class, Racun::class, CiljStednje::class, UplataCilja::class, Novcanik::class, PromjenaNovcanika::class,
     ],
-    version = 7,
+    version = 9,
     exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
@@ -46,7 +46,7 @@ abstract class BudgetDatabase : RoomDatabase() {
         fun get(context: Context): BudgetDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, BudgetDatabase::class.java, "smartbudget.db")
                 .addCallback(Pocetni)
-                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7)
+                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7, MIGRACIJA_7_8, MIGRACIJA_8_9)
                 .build()
                 .also { instance = it }
         }
@@ -137,6 +137,31 @@ abstract class BudgetDatabase : RoomDatabase() {
     private object MIGRACIJA_6_7 : Migration(6, 7) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `uplate_cilja` ADD COLUMN `valuta` TEXT")
+        }
+    }
+
+    /**
+     * v8: oznaka prijenosa na štednju i sa nje. Dosadašnji prijenosi na štednju imaju samo jedan dio
+     * (odljev s računa), za razliku od prijenosa između računa koji imaju dva.
+     */
+    private object MIGRACIJA_7_8 : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `transakcije` ADD COLUMN `naStednju` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL(
+                "UPDATE transakcije SET naStednju = 1 WHERE jePrijenos = 1 AND grupaId IS NOT NULL AND grupaId IN " +
+                    "(SELECT grupaId FROM transakcije WHERE jePrijenos = 1 AND grupaId IS NOT NULL GROUP BY grupaId HAVING COUNT(*) = 1)",
+            )
+        }
+    }
+
+    /**
+     * v9: veza uplate na cilj i promjene novčanika na prijenos koji ih je stvorio, da brisanje
+     * prijenosa poništi i štednju. Stariji prijenosi se povezuju pri brisanju po danu i iznosu.
+     */
+    private object MIGRACIJA_8_9 : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `uplate_cilja` ADD COLUMN `grupaId` INTEGER")
+            db.execSQL("ALTER TABLE `promjene_novcanika` ADD COLUMN `grupaId` INTEGER")
         }
     }
 

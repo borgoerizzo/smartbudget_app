@@ -17,3 +17,7 @@ local.properties
 
 # graphify (lokalni graf znanja)
 /graphify-out/
+
+# Release ključ (lozinke) - nikad na git
+/keystore.properties
+*.jks

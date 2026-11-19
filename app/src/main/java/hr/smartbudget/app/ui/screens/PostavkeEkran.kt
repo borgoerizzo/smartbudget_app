@@ -251,6 +251,24 @@ fun PostavkeEkran(vm: BudgetViewModel) {
                     ) { biram = false }
                 }
                 Razdjelnik()
+                run {
+                    var provjeravam by remember { mutableStateOf(false) }
+                    var nova by remember { mutableStateOf<hr.smartbudget.app.data.NovaVerzija?>(null) }
+                    RedakPostavke(
+                        "download", "Provjeri ažuriranja",
+                        if (provjeravam) "Provjeravam…" else "Instalirana verzija ${BuildConfig.VERSION_NAME} · dodirnite za provjeru",
+                    ) {
+                        if (!provjeravam) scope.launch {
+                            provjeravam = true
+                            runCatching { hr.smartbudget.app.data.Azuriranja.provjeri() }
+                                .onSuccess { n -> if (n == null) vm.poruka("Imate najnoviju verziju (${BuildConfig.VERSION_NAME}).") else nova = n }
+                                .onFailure { vm.poruka("Provjera nije uspjela: ${it.message ?: "nema veze s internetom"}") }
+                            provjeravam = false
+                        }
+                    }
+                    nova?.let { AzuriranjeDijalog(it) { nova = null } }
+                }
+                Razdjelnik()
                 RedakPostavke("navGrid", "Widget na početnom zaslonu", "Stanje računa i brzi unos · dodirnite za dodavanje") {
                     if (!StanjeWidget.zatraziDodavanje(ctx)) vm.poruka("Pokretač ne podržava automatsko dodavanje. Dugo pritisnite početni zaslon → Widgeti → SmartBudget.")
                 }

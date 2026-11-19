@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -15,16 +17,32 @@ android {
         applicationId = "hr.smartbudget.app"
         minSdk = 26
         targetSdk = 37
-        // Verzija: +0.1 za novu funkcionalnost ili veći ispravak, +0.001 za manju korekciju.
-        versionName = "2.802"
+        // Verzija: +0.1 za novu funkcionalnost ili veći ispravak (ažuriranje je tada obavezno),
+        // +0.001 za manju korekciju (ažuriranje se može odbiti). Vidi data/Azuriranja.kt.
+        versionName = "3.000"
         // Iz naziva, tako da svaka nova verzija raste i za Android (1.000 → 1000, 1.101 → 1101).
         versionCode = versionName!!.split('.').let { (a, b) -> a.toInt() * 1000 + b.toInt() }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release ključ: putanja i lozinke u keystore.properties (u korijenu projekta, nije na gitu).
+    // Svako izdanje mora biti potpisano istim ključem, inače se ažuriranje ne može instalirati.
+    val kljuc = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { f ->
+        Properties().apply { f.inputStream().use { load(it) } }
+    }
+    signingConfigs {
+        if (kljuc != null) create("release") {
+            storeFile = file(kljuc.getProperty("storeFile"))
+            storePassword = kljuc.getProperty("storePassword")
+            keyAlias = kljuc.getProperty("keyAlias")
+            keyPassword = kljuc.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
+            if (kljuc != null) signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = false
             }

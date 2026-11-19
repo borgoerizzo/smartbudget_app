@@ -32,6 +32,7 @@ import hr.smartbudget.app.domain.UdioKategorije
 import hr.smartbudget.app.domain.Zbroj
 import hr.smartbudget.app.domain.datum
 import hr.smartbudget.app.domain.jeStvarna
+import hr.smartbudget.app.domain.naStednju
 import hr.smartbudget.app.domain.najvecePromjene
 import hr.smartbudget.app.domain.povijest
 import hr.smartbudget.app.domain.predznaceniCenti
@@ -91,8 +92,11 @@ data class PocetnaStanje(
 ) {
     val preostaloDana get() = ciklus.brojDana - protekloDana
 
-    /** Neto stanje ciklusa: prihodi − rashodi, umanjeno za preneseni minus. */
-    val neto: Long get() = zbroj.razlika + prijenos
+    /** Neto prebačeno na štednju u ovom ciklusu (prijenosi na štednju − povlačenja natrag). */
+    val naStednju: Long get() = transakcije.naStednju()
+
+    /** Neto stanje ciklusa: prihodi − rashodi, umanjeno za preneseni minus i novac prebačen na štednju. */
+    val neto: Long get() = zbroj.razlika + prijenos - naStednju
 
     /** Rashodi zajedno s prenesenim minusom (koliko je prihoda "pojedeno"). */
     private val opterecenje get() = zbroj.troskovi - prijenos
@@ -458,6 +462,14 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
         _poruke.tryEmit("Prijenos ${Novac.eur(iznosCenti)}: $s → ${cilj?.naziv ?: novcanik?.naziv}")
     }
 
+    fun prijenosSaStednje(
+        na: String, iznosCenti: Long, kada: Long, opis: String,
+        cilj: CiljStednje?, novcanik: hr.smartbudget.app.data.Novcanik?, jedinice: Long,
+    ) = repo.opseg.launch {
+        repo.prijenosSaStednje(na, iznosCenti, kada, opis, cilj, novcanik, jedinice)
+        _poruke.tryEmit("Prijenos ${Novac.eur(iznosCenti)}: ${cilj?.naziv ?: novcanik?.naziv} → $na")
+    }
+
     fun prijenos(s: String, na: String, iznosCenti: Long, kada: Long, opis: String) = repo.opseg.launch {
         repo.prijenos(s, na, iznosCenti, kada, opis)
         _poruke.tryEmit("Prijenos ${Novac.eur(iznosCenti)}: $s → $na")
@@ -499,9 +511,23 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun obrisiTransakciju(t: Transakcija) = repo.opseg.launch {
-        repo.obrisiTransakciju(t)
-        _poruke.tryEmit("Transakcija obrisana")
+        val stednja = repo.obrisiTransakciju(t)
+        _poruke.tryEmit(if (stednja) "Prijenos obrisan i poništen na štednji" else "Transakcija obrisana")
     }
+
+    /** Brisanje odabranih unosa (višestruki odabir). */
+    fun obrisiTransakcije(lista: List<Transakcija>) = repo.opseg.launch {
+        if (lista.isEmpty()) return@launch
+        if (lista.size == 1) {
+            val stednja = repo.obrisiTransakciju(lista.first())
+            _poruke.tryEmit(if (stednja) "Prijenos obrisan i poništen na štednji" else "Transakcija obrisana")
+            return@launch
+        }
+        val stednja = repo.obrisiTransakcije(lista)
+        _poruke.tryEmit("Obrisano: ${lista.size} ${unosaRijec(lista.size)}" + if (stednja > 0) " (štednja poništena)" else "")
+    }
+
+    private fun unosaRijec(n: Int) = if (n % 10 == 1 && n % 100 != 11) "unos" else "unosa"
 
     fun spremiKategoriju(k: Kategorija) = repo.opseg.launch {
         repo.spremiKategoriju(k)

@@ -97,11 +97,66 @@ class BudgetRepository private constructor(val context: Context) {
         return poruke
     }
 
-    /** Brisanje; dio prijenosa briše i drugi dio (inače bi stanja računa bila kriva). */
-    suspend fun obrisiTransakciju(t: Transakcija) {
-        if (t.jePrijenos && t.grupaId != null) tDao.obrisiGrupu(t.grupaId) else tDao.obrisi(t)
-        t.slika?.let { runCatching { java.io.File(it).delete() } }
+    /**
+     * Brisanje; dio prijenosa briše i drugi dio (inače bi stanja računa bila kriva), a prijenos na štednju
+     * (ili sa nje) poništava i uplatu na cilj odnosno promjenu novčanika, kao da prijenosa nije ni bilo.
+     * Vraća true ako je poništena i štednja.
+     */
+    suspend fun obrisiTransakciju(t: Transakcija): Boolean = obrisiTransakcije(listOf(t)) > 0
+
+    /** Brisanje više unosa odjednom (višestruki odabir). Vraća broj prijenosa kojima je poništena i štednja. */
+    suspend fun obrisiTransakcije(lista: List<Transakcija>): Int {
+        var stednja = 0
+        db.withTransaction {
+            val obrisaneGrupe = mutableSetOf<Long>()
+            lista.distinctBy { it.id }.forEach { t ->
+                val grupa = t.grupaId.takeIf { t.jePrijenos }
+                if (grupa != null && !obrisaneGrupe.add(grupa)) return@forEach
+                if (t.naStednju && ponistiStednju(t)) stednja++
+                if (grupa != null) tDao.obrisiGrupu(grupa) else tDao.obrisi(t)
+            }
+        }
+        lista.forEach { t -> t.slika?.let { runCatching { java.io.File(it).delete() } } }
         promjena()
+        return stednja
+    }
+
+    /**
+     * Poništava štednju koju je stvorio prijenos [t]: briše uplatu na cilj (i vraća ušteđeni iznos cilja)
+     * ili promjenu novčanika. Prijenosi iz starijih verzija nemaju vezu pa se traži jedina uplata
+     * ili promjena istog dana i iznosa; ako ih je više, ništa se ne dira (ne može se znati koja je).
+     */
+    private suspend fun ponistiStednju(t: Transakcija): Boolean {
+        val uplate = db.uplate().sve()
+        val promjene = db.novcanici().svePromjene()
+        var vezaneUplate = t.grupaId?.let { g -> uplate.filter { it.grupaId == g } }.orEmpty()
+        var vezanePromjene = t.grupaId?.let { g -> promjene.filter { it.grupaId == g } }.orEmpty()
+        if (vezaneUplate.isEmpty() && vezanePromjene.isEmpty()) {
+            val dan = Instant.ofEpochMilli(t.datumVrijeme).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
+            val naStednju = t.tip == TipTransakcije.TROSAK
+            val kandidatiUplata = uplate.filter {
+                it.grupaId == null && it.valuta == null && it.epochDan == dan &&
+                    it.iznosCenti == (if (naStednju) t.iznosCenti else -t.iznosCenti)
+            }
+            val napomena = if (naStednju) "s računa ${t.nacinPlacanja}" else "na račun ${t.nacinPlacanja}"
+            val kandidatiPromjena = promjene.filter { it.grupaId == null && it.epochDan == dan && it.napomena == napomena }
+            when {
+                kandidatiUplata.size == 1 && kandidatiPromjena.isEmpty() -> vezaneUplate = kandidatiUplata
+                kandidatiPromjena.size == 1 && kandidatiUplata.isEmpty() -> vezanePromjene = kandidatiPromjena
+                else -> return false
+            }
+        }
+        val ciljevi = db.ciljevi().sve().associateBy { it.id }.toMutableMap()
+        vezaneUplate.forEach { u ->
+            if (u.valuta == null) ciljevi[u.ciljId]?.let { c ->
+                val novi = c.copy(ustedjenoCenti = (c.ustedjenoCenti - u.iznosCenti).coerceAtLeast(0))
+                db.ciljevi().spremi(novi)
+                ciljevi[c.id] = novi
+            }
+            db.uplate().obrisi(u)
+        }
+        vezanePromjene.forEach { db.novcanici().obrisiPromjenu(it) }
+        return true
     }
 
     // --- Računi i prijenosi ---
@@ -135,19 +190,49 @@ class BudgetRepository private constructor(val context: Context) {
         val odrediste = cilj?.naziv ?: novcanik?.naziv ?: ""
         val naziv = opis.ifBlank { "Prijenos na štednju: $odrediste" }
         val dan = java.time.Instant.ofEpochMilli(kada).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
+        val grupa = System.currentTimeMillis()
         db.withTransaction {
-            tDao.spremi(Transakcija(tip = TipTransakcije.TROSAK, iznosCenti = iznosCenti, datumVrijeme = kada, kategorijaId = kat, opis = naziv, nacinPlacanja = s, jePrijenos = true, grupaId = System.currentTimeMillis()))
+            tDao.spremi(Transakcija(tip = TipTransakcije.TROSAK, iznosCenti = iznosCenti, datumVrijeme = kada, kategorijaId = kat, opis = naziv, nacinPlacanja = s, jePrijenos = true, grupaId = grupa, naStednju = true))
             if (cilj != null) {
                 db.ciljevi().sve().firstOrNull { it.id == cilj.id }?.let { c ->
                     db.ciljevi().spremi(c.copy(ustedjenoCenti = c.ustedjenoCenti + iznosCenti))
-                    db.uplate().umetni(UplataCilja(ciljId = c.id, iznosCenti = iznosCenti, epochDan = dan))
+                    db.uplate().umetni(UplataCilja(ciljId = c.id, iznosCenti = iznosCenti, epochDan = dan, grupaId = grupa))
                 }
             }
             if (novcanik != null) {
                 val kripto = hr.smartbudget.app.domain.Valute.po(novcanik.valuta).kripto
                 db.novcanici().umetniPromjenu(
-                    PromjenaNovcanika(novcanikId = novcanik.id, jedinice = jedinice, epochDan = dan, ulozenoCenti = if (kripto) iznosCenti else null, napomena = "s računa $s"),
+                    PromjenaNovcanika(novcanikId = novcanik.id, jedinice = jedinice, epochDan = dan, ulozenoCenti = if (kripto) iznosCenti else null, napomena = "s računa $s", grupaId = grupa),
                 )
+            }
+        }
+        promjena()
+    }
+
+    /**
+     * Prijenos sa štednje natrag na račun: priljev na račun (vraća stanje ciklusa) i povlačenje s cilja
+     * ili isplata iz novčanika. [jedinice] je iznos koji se skida s novčanika u njegovoj valuti.
+     */
+    suspend fun prijenosSaStednje(
+        na: String, iznosCenti: Long, kada: Long, opis: String,
+        cilj: CiljStednje?, novcanik: Novcanik?, jedinice: Long,
+    ) {
+        val kat = kategorijaPrijenosa()
+        val izvor = cilj?.naziv ?: novcanik?.naziv ?: ""
+        val naziv = opis.ifBlank { "Prijenos sa štednje: $izvor" }
+        val dan = java.time.Instant.ofEpochMilli(kada).atZone(ZoneId.systemDefault()).toLocalDate().toEpochDay()
+        val grupa = System.currentTimeMillis()
+        db.withTransaction {
+            tDao.spremi(Transakcija(tip = TipTransakcije.PRIHOD, iznosCenti = iznosCenti, datumVrijeme = kada, kategorijaId = kat, opis = naziv, nacinPlacanja = na, jePrijenos = true, grupaId = grupa, naStednju = true))
+            if (cilj != null) {
+                db.ciljevi().sve().firstOrNull { it.id == cilj.id }?.let { c ->
+                    val novo = (c.ustedjenoCenti - iznosCenti).coerceAtLeast(0)
+                    db.ciljevi().spremi(c.copy(ustedjenoCenti = novo))
+                    db.uplate().umetni(UplataCilja(ciljId = c.id, iznosCenti = novo - c.ustedjenoCenti, epochDan = dan, grupaId = grupa))
+                }
+            }
+            if (novcanik != null) {
+                db.novcanici().umetniPromjenu(PromjenaNovcanika(novcanikId = novcanik.id, jedinice = -jedinice, epochDan = dan, napomena = "na račun $na", grupaId = grupa))
             }
         }
         promjena()

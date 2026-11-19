@@ -11,6 +11,8 @@ import hr.smartbudget.app.domain.kalendarPotrosnje
 import hr.smartbudget.app.domain.najcesciNazivi
 import hr.smartbudget.app.domain.prosjekPoDanuUTjednu
 import hr.smartbudget.app.domain.stopaStednje
+import hr.smartbudget.app.domain.naStednju
+import hr.smartbudget.app.domain.zbroj
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -19,10 +21,10 @@ import java.time.ZoneId
 
 class NavikeTest {
     private val kat = Kategorija(1, "Namirnice", "#FFFFFF", "cart", TipTransakcije.TROSAK)
-    private fun t(d: LocalDate, centi: Long, opis: String = "", ponavljajuci: Long? = null, tip: TipTransakcije = TipTransakcije.TROSAK, prijenos: Boolean = false) =
+    private fun t(d: LocalDate, centi: Long, opis: String = "", ponavljajuci: Long? = null, tip: TipTransakcije = TipTransakcije.TROSAK, prijenos: Boolean = false, stednja: Boolean = false) =
         TransakcijaSKategorijom(
             Transakcija(
-                tip = tip, iznosCenti = centi, kategorijaId = 1, opis = opis, ponavljajuciId = ponavljajuci, jePrijenos = prijenos,
+                tip = tip, iznosCenti = centi, kategorijaId = 1, opis = opis, ponavljajuciId = ponavljajuci, jePrijenos = prijenos || stednja, naStednju = stednja,
                 datumVrijeme = d.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
             ),
             kat,
@@ -58,6 +60,21 @@ class NavikeTest {
         assertEquals(25.0, stopaStednje(Zbroj(200_000, 150_000))!!, 0.001)
         assertEquals(-10.0, stopaStednje(Zbroj(100_000, 110_000))!!, 0.001)
         assertNull(stopaStednje(Zbroj(0, 5_000)))
+    }
+
+    @Test fun prijenosNaStednjuUmanjujeCiklus() {
+        val d = LocalDate.of(2026, 11, 12)
+        val l = listOf(
+            t(d, 225_000, tip = TipTransakcije.PRIHOD),
+            t(d, 50_000),
+            t(d, 30_000, stednja = true),                                // na štednju
+            t(d, 10_000, tip = TipTransakcije.PRIHOD, stednja = true),   // natrag sa štednje
+            t(d, 20_000, prijenos = true),                               // između računa: ne broji se
+        )
+        assertEquals(20_000L, l.naStednju())
+        val z = l.zbroj()
+        assertEquals(225_000L, z.prihodi)
+        assertEquals(50_000L, z.troskovi)
     }
 
     @Test fun najcesciNazivi() {

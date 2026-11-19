@@ -11,6 +11,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import kotlinx.coroutines.launch
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -125,7 +131,34 @@ fun PocetnaEkran(
     onPrijenos: () -> Unit,
     /** Sadržaj taba "Štednja" (ciljevi i štednja u valutama). */
     stednja: @Composable () -> Unit = {},
+    /** Brisanje jednog ili više zapisa (povlačenje udesno ili višestruki odabir), nakon potvrde. */
+    onObrisi: (List<hr.smartbudget.app.data.Transakcija>) -> Unit = {},
 ) {
+    val context = LocalContext.current
+    // Višestruki odabir (dugi pritisak na stavku): id-jevi odabranih; prazno = odabir nije u tijeku.
+    var odabrane by remember { mutableStateOf(setOf<Long>()) }
+    // Zapisi koji čekaju potvrdu brisanja.
+    var zaBrisanje by remember { mutableStateOf<List<TransakcijaSKategorijom>?>(null) }
+    val sveStavke = s.grupe.flatMap { it.stavke }
+    // Odabir vrijedi samo za prikazane stavke (npr. nakon brisanja, promjene ciklusa ili filtera).
+    val odabraneStavke = sveStavke.filter { it.transakcija.id in odabrane }
+    val uOdabiru = odabraneStavke.isNotEmpty()
+    fun prebaciOdabir(t: TransakcijaSKategorijom) {
+        val id = t.transakcija.id
+        odabrane = (odabrane.intersect(sveStavke.map { it.transakcija.id }.toSet())).let { if (id in it) it - id else it + id }
+    }
+    BackHandler(uOdabiru) { odabrane = emptySet() }
+    zaBrisanje?.let { lista ->
+        PotvrdaBrisanja(
+            if (lista.size == 1) (if (lista.first().transakcija.jePrijenos) "Obrisati prijenos?" else "Obrisati transakciju?") else "Obrisati ${lista.size} zapisa?",
+            opisBrisanja(lista),
+            { zaBrisanje = null },
+        ) {
+            onObrisi(lista.map { it.transakcija })
+            odabrane = odabrane - lista.map { it.transakcija.id }.toSet()
+            zaBrisanje = null
+        }
+    }
     val privatnost by AppPostavke.get(LocalContext.current).stanje.collectAsState()
     // 0 = ciklus prihoda i potrošnje, 1 = štednja
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -171,7 +204,7 @@ fun PocetnaEkran(
             // Tabovi u istoj stavci kao zaglavlje, da pomaci pretrage (indeksi stavki) ostanu isti.
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Segmenti(listOf("Ciklus", "Štednja"), tab, { tab = it }, boje = listOf(Neon.Zelena, Neon.LjubicastaSvijetla))
+                    Segmenti(listOf("Ciklus", "Štednja"), tab, { tab = it; odabrane = emptySet() }, boje = listOf(Neon.Zelena, Neon.LjubicastaSvijetla))
                     if (tab == 0 && !ciklusZakljucan) Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onTjedniPregled) { biramRaspon = true }
                 }
             }
@@ -239,13 +272,31 @@ fun PocetnaEkran(
             }
             items(s.grupe, key = { it.datum.toEpochDay() }) { g ->
                 val dan = g.datum.toEpochDay()
-                GrupaDanaKartica(g, privatnost.sakrijPrihod, dan !in skupljeni, { skupljeni = if (dan in skupljeni) skupljeni - dan else skupljeni + dan }, onTransakcija)
+                GrupaDanaKartica(
+                    g, privatnost.sakrijPrihod, dan !in skupljeni, { skupljeni = if (dan in skupljeni) skupljeni - dan else skupljeni + dan }, onTransakcija,
+                    odabrane = if (uOdabiru) odabrane else null,
+                    onOdaberi = ::prebaciOdabir,
+                    onPodijeli = { podijeli(context, listOf(it)) },
+                    onObrisi = { zaBrisanje = listOf(it) },
+                )
             }
             // Prostor ispod rezultata, da se i kratki popis može poravnati odmah ispod polja pretrage.
             if (fokusPretrage) item { Spacer(Modifier.fillParentMaxHeight()) }
         }
+        // Višestruki odabir: traka s radnjama umjesto gumba za brzi unos.
+        if (tab == 0 && !ciklusZakljucan && uOdabiru) {
+            TrakaOdabira(
+                broj = odabraneStavke.size,
+                sveOdabrano = odabraneStavke.size == sveStavke.size,
+                onSve = { odabrane = if (odabraneStavke.size == sveStavke.size) emptySet() else sveStavke.map { it.transakcija.id }.toSet() },
+                onPodijeli = { podijeli(context, odabraneStavke) },
+                onObrisi = { zaBrisanje = odabraneStavke },
+                onZatvori = { odabrane = emptySet() },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 106.dp),
+            )
+        }
         // Brzi unos (FAB 60 dp, zaobljenje 20 dp)
-        if (tab == 0 && !ciklusZakljucan) Box(
+        if (tab == 0 && !ciklusZakljucan && !uOdabiru) Box(
             Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 24.dp, bottom = 106.dp)
@@ -259,6 +310,54 @@ fun PocetnaEkran(
         ) {
             Icon(Ikone.ui("plus"), "Brzo dodaj transakciju", Modifier.size(28.dp), tint = Neon.NaGumbu)
         }
+    }
+}
+
+@Composable
+private fun TrakaOdabira(
+    broj: Int,
+    sveOdabrano: Boolean,
+    onSve: () -> Unit,
+    onPodijeli: () -> Unit,
+    onObrisi: () -> Unit,
+    onZatvori: () -> Unit,
+    modifier: Modifier,
+) {
+    val oblik = RoundedCornerShape(22.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .neonSjaj(Neon.Cijan, 20.dp, 22.dp, .25f)
+            .clip(oblik)
+            .background(Neon.Sheet)
+            .border(1.dp, Neon.Cijan.copy(alpha = .45f), oblik)
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Završi odabir", onClick = onZatvori),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Ikone.ui("close"), "Završi odabir", Modifier.size(20.dp), tint = Neon.TekstSiv) }
+        Text(
+            "Odabrano: $broj", style = Tip.tijelo.copy(fontWeight = FontWeight.Bold), maxLines = 1,
+            modifier = Modifier.weight(1f).padding(start = 2.dp),
+        )
+        Text(
+            if (sveOdabrano) "Ništa" else "Sve", color = Neon.Cijan, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClickLabel = if (sveOdabrano) "Poništi odabir svih" else "Odaberi sve", onClick = onSve)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        )
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Podijeli odabrane", onClick = onPodijeli),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Ikone.ui("share"), "Podijeli odabrane", Modifier.size(22.dp), tint = Neon.Cijan) }
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Obriši odabrane", onClick = onObrisi),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Ikone.ui("trash"), "Obriši odabrane", Modifier.size(22.dp), tint = Neon.Crvena) }
     }
 }
 
@@ -454,6 +553,26 @@ private fun HeroKartica(s: PocetnaStanje, privatnost: StanjePostavki, onPregled:
             SubMetrika("Prihodi", if (sakrijPrihod) AppPostavke.SKRIVENO else Novac.predznak(s.zbroj.prihodi), Neon.Zelena, "arrowDownLeft", Modifier.weight(1f)) { onPregled(TipTransakcije.PRIHOD) }
             SubMetrika("Rashodi", Novac.predznak(-s.zbroj.troskovi), Neon.Crvena, "arrowUpRight", Modifier.weight(1f)) { onPregled(TipTransakcije.TROSAK) }
         }
+        if (s.naStednju != 0L) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Neon.Ispuna)
+                    .border(1.dp, Neon.RubSlab, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Prebačeno na štednju", style = Tip.tijelo.copy(fontSize = 13.sp))
+                    Text("Novac na štednji ne ulazi u stanje ciklusa", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+                }
+                Text(
+                    if (sakrijStanje) AppPostavke.SKRIVENO else Novac.predznak(-s.naStednju),
+                    color = Neon.LjubicastaTekst, style = Tip.iznos,
+                )
+            }
+        }
         if (s.prijenos < 0) {
             Row(
                 Modifier
@@ -553,6 +672,11 @@ private fun GrupaDanaKartica(
     rasireno: Boolean,
     onPrebaci: () -> Unit,
     onTransakcija: (TransakcijaSKategorijom) -> Unit,
+    /** Id-jevi odabranih stavki; null = višestruki odabir nije u tijeku. */
+    odabrane: Set<Long>?,
+    onOdaberi: (TransakcijaSKategorijom) -> Unit,
+    onPodijeli: (TransakcijaSKategorijom) -> Unit,
+    onObrisi: (TransakcijaSKategorijom) -> Unit,
 ) {
     // Dnevni zbroj otkriva prihod ako ga dan sadrži.
     val sakrijZbroj = sakrijPrihod && g.stavke.any { it.transakcija.tip == TipTransakcije.PRIHOD }
@@ -589,19 +713,137 @@ private fun GrupaDanaKartica(
         ) {
             g.stavke.forEachIndexed { i, t ->
                 if (i > 0) HorizontalDivider(color = Neon.RubSlab, thickness = 1.dp)
-                StavkaTransakcije(t, sakrijPrihod = sakrijPrihod) { onTransakcija(t) }
+                androidx.compose.runtime.key(t.transakcija.id) {
+                    PrevlacivaStavka(
+                        omoguceno = odabrane == null,
+                        onPodijeli = { onPodijeli(t) },
+                        onObrisi = { onObrisi(t) },
+                    ) {
+                        StavkaTransakcije(
+                            t, sakrijPrihod = sakrijPrihod,
+                            onLongClick = { onOdaberi(t) },
+                            odabrana = odabrane?.let { t.transakcija.id in it },
+                        ) { if (odabrane != null) onOdaberi(t) else onTransakcija(t) }
+                    }
+                }
             }
         }
         }
     }
 }
 
+/**
+ * Povlačenje kartice: ulijevo dijeli zapis, udesno ga briše (uz potvrdu). Kartica se nakon
+ * povlačenja vraća na mjesto; brisanje se dogodi tek nakon potvrde.
+ */
+@Composable
+private fun PrevlacivaStavka(
+    omoguceno: Boolean,
+    onPodijeli: () -> Unit,
+    onObrisi: () -> Unit,
+    sadrzaj: @Composable () -> Unit,
+) {
+    val stanje = rememberSwipeToDismissBoxState()
+    val opseg = androidx.compose.runtime.rememberCoroutineScope()
+    SwipeToDismissBox(
+        state = stanje,
+        gesturesEnabled = omoguceno,
+        // Poziva se tek kad je povlačenje završeno (ne usred povlačenja): radnja, pa kartica natrag na mjesto.
+        onDismiss = { smjer ->
+            when (smjer) {
+                SwipeToDismissBoxValue.EndToStart -> onPodijeli()
+                SwipeToDismissBoxValue.StartToEnd -> onObrisi()
+                SwipeToDismissBoxValue.Settled -> Unit
+            }
+            opseg.launch { stanje.reset() }
+        },
+        backgroundContent = {
+            val smjer = stanje.dismissDirection
+            val brisanje = smjer == SwipeToDismissBoxValue.StartToEnd
+            val boja = if (brisanje) Neon.Crvena else Neon.Cijan
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .background(if (smjer == SwipeToDismissBoxValue.Settled) Color.Transparent else boja.copy(alpha = .22f))
+                    .padding(horizontal = 22.dp),
+                horizontalArrangement = if (brisanje) Arrangement.Start else Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (smjer != SwipeToDismissBoxValue.Settled) {
+                    if (!brisanje) Text("Podijeli  ", color = boja, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Icon(Ikone.ui(if (brisanje) "trash" else "share"), null, Modifier.size(22.dp), tint = boja)
+                    if (brisanje) Text("  Obriši", color = boja, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+    ) {
+        // Neprozirna podloga: pri povlačenju kartica prekriva boju radnje ispod sebe.
+        Box(Modifier.background(Neon.Kartica)) { sadrzaj() }
+    }
+}
+
+/** Tekst za dijeljenje jednog ili više zapisa (npr. u poruci). */
+internal fun tekstZaDijeljenje(lista: List<TransakcijaSKategorijom>): String {
+    fun redak(t: TransakcijaSKategorijom): String {
+        val tr = t.transakcija
+        val iznos = Novac.predznak(if (tr.tip == TipTransakcije.PRIHOD) tr.iznosCenti else -tr.iznosCenti)
+        val vrsta = when {
+            tr.jePrijenos -> "Prijenos"
+            tr.tip == TipTransakcije.PRIHOD -> "Prihod"
+            else -> "Trošak"
+        }
+        val naziv = tr.opis.ifBlank { t.kategorija.naziv }
+        val kategorija = if (tr.jePrijenos || tr.opis.isBlank()) "" else " (${t.kategorija.naziv})"
+        return "${HrDatum.puni(t.datum())} ${HrDatum.vrijeme(t.vrijeme())} · $vrsta: $naziv$kategorija · $iznos · ${tr.nacinPlacanja}"
+    }
+    if (lista.size == 1) return redak(lista.first())
+    val poredane = lista.sortedBy { it.transakcija.datumVrijeme }
+    val neto = poredane.filter { !it.transakcija.jePrijenos }
+        .sumOf { if (it.transakcija.tip == TipTransakcije.PRIHOD) it.transakcija.iznosCenti else -it.transakcija.iznosCenti }
+    return buildString {
+        appendLine("SmartBudget · ${lista.size} zapisa")
+        poredane.forEach { appendLine("• " + redak(it)) }
+        append("Ukupno (bez prijenosa): ${Novac.predznak(neto)}")
+    }
+}
+
+private fun podijeli(context: android.content.Context, lista: List<TransakcijaSKategorijom>) {
+    if (lista.isEmpty()) return
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, tekstZaDijeljenje(lista))
+    }
+    val naslov = if (lista.size == 1) "Podijeli zapis" else "Podijeli ${lista.size} zapisa"
+    context.startActivity(android.content.Intent.createChooser(send, naslov).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+}
+
+/** Tekst potvrde brisanja; prijenos na štednju naglašava da se poništava i na štednji. */
+private fun opisBrisanja(lista: List<TransakcijaSKategorijom>): String {
+    val stednja = lista.any { it.transakcija.naStednju }
+    val prijenos = lista.any { it.transakcija.jePrijenos && !it.transakcija.naStednju }
+    val uvod = if (lista.size == 1) {
+        val t = lista.first().transakcija
+        "${t.opis.ifBlank { lista.first().kategorija.naziv }} · ${Novac.eur(t.iznosCenti)}"
+    } else "Odabrano: ${lista.size} zapisa."
+    return buildString {
+        append(uvod)
+        if (stednja) append("\nIznos prijenosa uklanja se i sa štednje (cilja ili novčanika), kao da prijenosa nije ni bilo.")
+        if (prijenos) append("\nKod prijenosa između računa brišu se oba dijela.")
+        append("\nOva radnja se ne može poništiti.")
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun StavkaTransakcije(
     t: TransakcijaSKategorijom,
     udio: String? = null,
     sDatumom: Boolean = false,
     sakrijPrihod: Boolean = false,
+    /** Dugi pritisak (višestruki odabir); null = bez dugog pritiska. */
+    onLongClick: (() -> Unit)? = null,
+    /** Dok traje višestruki odabir: je li ova stavka odabrana (null = odabir nije u tijeku). */
+    odabrana: Boolean? = null,
     onClick: () -> Unit,
 ) {
     val prihod = t.transakcija.tip == TipTransakcije.PRIHOD
@@ -609,11 +851,29 @@ fun StavkaTransakcije(
     Column(
         Modifier
             .fillMaxWidth()
-            .clickable(onClickLabel = "Uredi transakciju", onClick = onClick)
+            .then(if (odabrana == true) Modifier.background(Neon.Cijan.copy(alpha = .13f)) else Modifier)
+            .combinedClickable(
+                onClickLabel = when (odabrana) { null -> "Uredi transakciju"; true -> "Poništi odabir"; false -> "Odaberi" },
+                onLongClickLabel = if (onLongClick != null) "Odaberi više" else null,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (odabrana != null) {
+                Box(
+                    Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(if (odabrana) Neon.Cijan else Color.Transparent)
+                        .border(1.5.dp, if (odabrana) Neon.Cijan else Neon.TekstSiv, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (odabrana) Icon(Ikone.ui("check"), null, Modifier.size(14.dp), tint = Neon.NaGumbu)
+                }
+            }
             Text(
                 t.transakcija.opis.ifBlank { t.kategorija.naziv },
                 style = Tip.tijelo, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,

@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import java.security.MessageDigest
 import java.security.SecureRandom
 
-/** Postavke sigurnosti, privatnosti i obavijesti (izvan baze, ne ulaze u sigurnosnu kopiju). */
+/** Postavke sigurnosti, privatnosti i obavijesti (izvan baze; u sigurnosnu kopiju ulaze sve osim PIN-a i zaključavanja). */
 data class StanjePostavki(
     val zakljucavanje: Boolean = false,
     val biometrija: Boolean = true,
@@ -131,6 +131,43 @@ class AppPostavke private constructor(context: Context) {
     private fun sazetak(sol: String, pin: String): String =
         MessageDigest.getInstance("SHA-256").digest((sol + pin).toByteArray()).joinToString("") { "%02x".format(it) }
 
+    /**
+     * Postavke za sigurnosnu kopiju. PIN i zaključavanje se ne kopiraju (datoteka kopije nije šifrirana,
+     * a kratki PIN bi se iz sažetka lako pogodio); nakon vraćanja ih treba ponovno postaviti.
+     */
+    fun zaKopiju(): org.json.JSONObject = org.json.JSONObject().apply {
+        prefs.all.forEach { (k, v) ->
+            if (k in NE_KOPIRA) return@forEach
+            val o = when (v) {
+                is Boolean -> org.json.JSONObject().put("t", "b").put("v", v)
+                is Int -> org.json.JSONObject().put("t", "i").put("v", v)
+                is Long -> org.json.JSONObject().put("t", "l").put("v", v)
+                is String -> org.json.JSONObject().put("t", "s").put("v", v)
+                is Set<*> -> org.json.JSONObject().put("t", "ss").put("v", org.json.JSONArray(v.map { it.toString() }))
+                else -> return@forEach
+            }
+            put(k, o)
+        }
+    }
+
+    /** Vraća postavke iz kopije; postojeći PIN i zaključavanje ostaju kakvi jesu. */
+    fun vratiIzKopije(o: org.json.JSONObject) {
+        val e = prefs.edit()
+        o.keys().forEach { k ->
+            if (k in NE_KOPIRA) return@forEach
+            val p = o.optJSONObject(k) ?: return@forEach
+            when (p.optString("t")) {
+                "b" -> e.putBoolean(k, p.getBoolean("v"))
+                "i" -> e.putInt(k, p.getInt("v"))
+                "l" -> e.putLong(k, p.getLong("v"))
+                "s" -> e.putString(k, p.getString("v"))
+                "ss" -> p.getJSONArray("v").let { a -> e.putStringSet(k, (0 until a.length()).map { a.getString(it) }.toSet()) }
+            }
+        }
+        e.apply()
+        _stanje.value = ucitaj()
+    }
+
     /** Za obavijest o minusu: šalje se samo pri prelasku iz plusa u minus, ne kod svake promjene. */
     var zadnjeStanjeNegativno: Boolean
         get() = prefs.getBoolean("zadnjeNegativno", false)
@@ -141,6 +178,9 @@ class AppPostavke private constructor(context: Context) {
         fun get(context: Context): AppPostavke = instance ?: synchronized(this) {
             instance ?: AppPostavke(context.applicationContext).also { instance = it }
         }
+
+        /** Ključevi koji ne ulaze u sigurnosnu kopiju (sigurnost i interno stanje obavijesti). */
+        private val NE_KOPIRA = setOf("pinHash", "pinSol", "zakljucavanje", "prognozePoslane", "zadnjeNegativno")
 
         /** Prikaz skrivenog iznosa. */
         val ZASLONI = listOf("analitika", "budzeti")

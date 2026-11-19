@@ -43,6 +43,11 @@ data class Transakcija(
     val grupaId: Long? = null,
     /** Putanja fotografije računa u internoj memoriji aplikacije. */
     val slika: String? = null,
+    /**
+     * Prijenos s računa na štednju (trošak) ili sa štednje natrag na račun (prihod).
+     * Nije ni prihod ni trošak, ali umanjuje (odnosno vraća) stanje ciklusa.
+     */
+    @ColumnInfo(defaultValue = "0") val naStednju: Boolean = false,
 )
 
 /**
@@ -85,6 +90,8 @@ data class UplataCilja(
      * Uplate u drugim valutama čuvaju se u najmanjim jedinicama te valute i preračunavaju po današnjem tečaju.
      */
     val valuta: String? = null,
+    /** [Transakcija.grupaId] prijenosa s računa (ili na račun) koji je stvorio ovu uplatu; null = ručna uplata. */
+    val grupaId: Long? = null,
 )
 
 /**
@@ -109,6 +116,8 @@ data class PromjenaNovcanika(
     /** Koliko je kupnja koštala u osnovnoj valuti aplikacije (opcionalno, za dobit/gubitak kod kriptovaluta). */
     val ulozenoCenti: Long? = null,
     val napomena: String = "",
+    /** [Transakcija.grupaId] prijenosa s računa (ili na račun) koji je stvorio ovu promjenu; null = ručna promjena. */
+    val grupaId: Long? = null,
 )
 
 /** Stanje jednog računa iz transakcija (bez početnog stanja). */

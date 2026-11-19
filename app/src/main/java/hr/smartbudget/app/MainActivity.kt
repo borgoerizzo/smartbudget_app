@@ -158,6 +158,21 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
     }
     BackHandler(ekran != Ekran.POCETNA) { ekran = Ekran.POCETNA }
 
+    // Provjera nove verzije pri pokretanju: obavezna se uvijek nudi, odbijena neobavezna se više ne nudi sama.
+    val kontekst = androidx.compose.ui.platform.LocalContext.current
+    var novaVerzija by remember { mutableStateOf<hr.smartbudget.app.data.NovaVerzija?>(null) }
+    LaunchedEffect(Unit) {
+        runCatching { hr.smartbudget.app.data.Azuriranja.provjeri() }.getOrNull()?.let { n ->
+            if (hr.smartbudget.app.data.Azuriranja.obavezno(n) || !hr.smartbudget.app.data.Azuriranja.odbijena(kontekst, n.kod)) novaVerzija = n
+        }
+    }
+    novaVerzija?.let { n ->
+        hr.smartbudget.app.ui.screens.AzuriranjeDijalog(n) {
+            hr.smartbudget.app.data.Azuriranja.odbij(kontekst, n.kod)
+            novaVerzija = null
+        }
+    }
+
     val tjedni by vm.tjedni.collectAsState()
     // Tjedni pregled otvoren gumbom na Početnoj (ne iz obavijesti)
     var tjedniNaZahtjev by remember { mutableStateOf(false) }
@@ -225,6 +240,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onRacun = { sheet = Sheet.RacunS(it) },
                 onNoviRacun = { sheet = Sheet.RacunS(null) },
                 onPrijenos = { sheet = Sheet.Prijenos },
+                onObrisi = vm::obrisiTransakcije,
                 stednja = {
                     StednjaTab(
                         ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve, { sheet = Sheet.Prijenos },
@@ -313,10 +329,13 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
             racuni, vm::prijenos, { sheet = null },
             ciljevi = ciljevi, novcanici = novcanici, t = tecajevi, onOsvjezi = vm::osvjeziTecajeve,
             onNaStednju = vm::prijenosNaStednju,
+            onSaStednje = vm::prijenosSaStednje,
         )
         is Sheet.PrijenosInfo -> PotvrdaBrisanja(
             "Obrisati prijenos?",
-            "${s.t.opis} · ${hr.smartbudget.app.domain.Novac.eur(s.t.iznosCenti)}\nBrišu se oba dijela prijenosa.",
+            "${s.t.opis} · ${hr.smartbudget.app.domain.Novac.eur(s.t.iznosCenti)}\n" +
+                if (s.t.naStednju) "Iznos se uklanja i sa štednje (cilja ili novčanika), kao da prijenosa nije ni bilo."
+                else "Brišu se oba dijela prijenosa.",
             { sheet = null },
         ) { vm.obrisiTransakciju(s.t); sheet = null }
         is Sheet.Cilj -> CiljSheet(s.c, uplate, vm::spremiCilj, vm::obrisiCilj, { sheet = null }, vm::obrisiUplatuCilja)
