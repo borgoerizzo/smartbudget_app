@@ -14,3 +14,6 @@
 .cxx
 local.properties
 /izdanja
+
+# graphify (lokalni graf znanja)
+/graphify-out/
