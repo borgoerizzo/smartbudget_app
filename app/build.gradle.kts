@@ -19,7 +19,7 @@ android {
         targetSdk = 37
         // Verzija: +0.1 za novu funkcionalnost ili veći ispravak (ažuriranje je tada obavezno),
         // +0.001 za manju korekciju (ažuriranje se može odbiti). Vidi data/Azuriranja.kt.
-        versionName = "3.002"
+        versionName = "3.100"
         // Iz naziva, tako da svaka nova verzija raste i za Android (1.000 → 1000, 1.101 → 1101).
         versionCode = versionName!!.split('.').let { (a, b) -> a.toInt() * 1000 + b.toInt() }
 

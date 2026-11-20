@@ -218,6 +218,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
         Ekran.POCETNA -> Neon.Zelena.copy(alpha = .10f) to Color(0x337B2CBF)
         Ekran.ANALITIKA -> Neon.Cijan.copy(alpha = .08f) to Color(0x387B2CBF)
         Ekran.BUDZETI -> Neon.Ljubicasta.copy(alpha = .18f) to Neon.Cijan.copy(alpha = .07f)
+        Ekran.ULAGANJA -> Neon.Zelena.copy(alpha = .08f) to Neon.Cijan.copy(alpha = .08f)
         Ekran.POSTAVKE -> Neon.Cijan.copy(alpha = .08f) to Color(0x2E7B2CBF)
     }
     PozadinaEkrana(gore, desno) {
@@ -241,6 +242,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onNoviRacun = { sheet = Sheet.RacunS(null) },
                 onPrijenos = { sheet = Sheet.Prijenos },
                 onObrisi = vm::obrisiTransakcije,
+                onPostavke = { ekran = Ekran.POSTAVKE },
                 stednja = {
                     StednjaTab(
                         ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve, { sheet = Sheet.Prijenos },
@@ -286,6 +288,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onKalkulator = { sheet = Sheet.Kalkulator },
                 uplateCiljeva = uplate,
             ) }
+            Ekran.ULAGANJA -> hr.smartbudget.app.ui.screens.UlaganjaEkran()
             Ekran.POSTAVKE -> PostavkeEkran(vm)
         }
         // Prijelaz prema dnu iza navigacije

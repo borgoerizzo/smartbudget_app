@@ -324,11 +324,13 @@ fun BiracCiklusa(tekst: String, onPrethodni: () -> Unit, onSljedeci: () -> Unit,
     }
 }
 
-enum class Ekran(val naziv: String, val ikona: String) {
+/** Zasloni; Postavke nisu u donjem izborniku (otvaraju se zupčanikom na Početnoj). */
+enum class Ekran(val naziv: String, val ikona: String, val uIzborniku: Boolean = true) {
     POCETNA("Početna", "navHome"),
     ANALITIKA("Analitika", "navChart"),
     BUDZETI("Budžeti", "navGrid"),
-    POSTAVKE("Postavke", "navSliders"),
+    ULAGANJA("Ulaganja", "navTrend"),
+    POSTAVKE("Postavke", "navSliders", uIzborniku = false),
 }
 
 @Composable
@@ -345,7 +347,7 @@ fun DonjaNavigacija(trenutni: Ekran, onOdabir: (Ekran) -> Unit, modifier: Modifi
             .padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Ekran.entries.forEach { e ->
+        Ekran.entries.filter { it.uIzborniku }.forEach { e ->
             val aktivan = e == trenutni
             Column(
                 Modifier

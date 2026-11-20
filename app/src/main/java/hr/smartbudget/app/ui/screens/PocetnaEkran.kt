@@ -133,6 +133,8 @@ fun PocetnaEkran(
     stednja: @Composable () -> Unit = {},
     /** Brisanje jednog ili više zapisa (povlačenje udesno ili višestruki odabir), nakon potvrde. */
     onObrisi: (List<hr.smartbudget.app.data.Transakcija>) -> Unit = {},
+    /** Zupčanik gore desno otvara Postavke. */
+    onPostavke: () -> Unit = {},
 ) {
     val context = LocalContext.current
     // Višestruki odabir (dugi pritisak na stavku): id-jevi odabranih; prazno = odabir nije u tijeku.
@@ -204,7 +206,11 @@ fun PocetnaEkran(
             // Tabovi u istoj stavci kao zaglavlje, da pomaci pretrage (indeksi stavki) ostanu isti.
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Segmenti(listOf("Ciklus", "Štednja"), tab, { tab = it; odabrane = emptySet() }, boje = listOf(Neon.Zelena, Neon.LjubicastaSvijetla))
+                    // Postavke su izvan donjeg izbornika: zupčanik uz tabove.
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Segmenti(listOf("Ciklus", "Štednja"), tab, { tab = it; odabrane = emptySet() }, Modifier.weight(1f), boje = listOf(Neon.Zelena, Neon.LjubicastaSvijetla))
+                        KruzniGumb("postavke", "Postavke", onPostavke, velicina = 52.dp)
+                    }
                     if (tab == 0 && !ciklusZakljucan) Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onTjedniPregled) { biramRaspon = true }
                 }
             }
