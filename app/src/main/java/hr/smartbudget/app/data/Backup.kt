@@ -52,6 +52,8 @@ data class SadrzajKopije(
     val promjeneNovcanika: List<PromjenaNovcanika> = emptyList(),
     /** Postavke aplikacije (valuta, privatnost, obavijesti, raspored kartica…), bez PIN-a; null u starijim kopijama. */
     val postavkeAplikacije: JSONObject? = null,
+    val pozicije: List<Pozicija> = emptyList(),
+    val promjenePozicija: List<PromjenaPozicije> = emptyList(),
 )
 
 /**
@@ -177,6 +179,8 @@ class BackupManager private constructor(private val context: Context) {
                 novcanici = db.novcanici().sve(),
                 promjeneNovcanika = db.novcanici().svePromjene(),
                 postavkeAplikacije = AppPostavke.get(context).zaKopiju(),
+                pozicije = db.pozicije().sve(),
+                promjenePozicija = db.pozicije().svePromjene(),
             )
         }
     }
@@ -210,6 +214,10 @@ class BackupManager private constructor(private val context: Context) {
             db.novcanici().obrisiSve()
             db.novcanici().umetni(k.novcanici)
             db.novcanici().umetniPromjene(k.promjeneNovcanika)
+            db.pozicije().obrisiSvePromjene()
+            db.pozicije().obrisiSve()
+            db.pozicije().umetni(k.pozicije)
+            db.pozicije().umetniPromjene(k.promjenePozicija)
         }
         k.postavkeAplikacije?.let { AppPostavke.get(context).vratiIzKopije(it) }
         hr.smartbudget.app.widget.StanjeWidget.osvjezi(context)
@@ -217,8 +225,8 @@ class BackupManager private constructor(private val context: Context) {
 
     companion object {
         const val ZADRZI = 10
-        /** 2: ručni rasponi ciklusa; 3: računi, ciljevi, prijenosi i podjele; 4: uplate na ciljeve; 5: novčanici u valutama; 6: prijenosi na štednju; 7: veza štednje na prijenos; 8: postavke aplikacije (stariji formati se i dalje mogu vratiti). */
-        private const val VERZIJA_FORMATA = 8
+        /** 2: ručni rasponi ciklusa; 3: računi, ciljevi, prijenosi i podjele; 4: uplate na ciljeve; 5: novčanici u valutama; 6: prijenosi na štednju; 7: veza štednje na prijenos; 8: postavke aplikacije; 9: ulaganja; 10: ručno uneseni zapisi i obveznice (stariji formati se i dalje mogu vratiti). */
+        private const val VERZIJA_FORMATA = 10
 
         @Volatile private var instance: BackupManager? = null
         fun get(context: Context): BackupManager = instance ?: synchronized(this) {
@@ -266,7 +274,7 @@ class BackupManager private constructor(private val context: Context) {
                 JSONObject().apply { put("id", it.id); put("ciljId", it.ciljId); put("iznosCenti", it.iznosCenti); put("epochDan", it.epochDan); put("valuta", it.valuta ?: JSONObject.NULL); put("grupaId", it.grupaId ?: JSONObject.NULL) }
             }))
             put("novcanici", JSONArray(k.novcanici.map {
-                JSONObject().apply { put("id", it.id); put("naziv", it.naziv); put("valuta", it.valuta); put("redoslijed", it.redoslijed) }
+                JSONObject().apply { put("id", it.id); put("naziv", it.naziv); put("valuta", it.valuta); put("redoslijed", it.redoslijed); put("rokEpochDan", it.rokEpochDan ?: JSONObject.NULL) }
             }))
             put("promjeneNovcanika", JSONArray(k.promjeneNovcanika.map {
                 JSONObject().apply {
@@ -275,6 +283,17 @@ class BackupManager private constructor(private val context: Context) {
                 }
             }))
             k.postavkeAplikacije?.let { put("postavkeAplikacije", it) }
+            put("pozicije", JSONArray(k.pozicije.map {
+                JSONObject().apply { put("id", it.id); put("simbol", it.simbol); put("naziv", it.naziv); put("vrsta", it.vrsta); put("valuta", it.valuta); put("redoslijed", it.redoslijed)
+                    put("nominalCenti", it.nominalCenti ?: JSONObject.NULL); put("dospijeceEpochDan", it.dospijeceEpochDan ?: JSONObject.NULL)
+                }
+            }))
+            put("promjenePozicija", JSONArray(k.promjenePozicija.map {
+                JSONObject().apply {
+                    put("id", it.id); put("pozicijaId", it.pozicijaId); put("kolicinaMikro", it.kolicinaMikro); put("epochDan", it.epochDan)
+                    put("ulozenoCenti", it.ulozenoCenti ?: JSONObject.NULL); put("napomena", it.napomena)
+                }
+            }))
             put("prilagodbeCiklusa", JSONArray(k.prilagodbe.map {
                 JSONObject().apply { put("sidro", it.sidro); put("pocetakEpochDan", it.pocetakEpochDan) }
             }))
@@ -320,7 +339,7 @@ class BackupManager private constructor(private val context: Context) {
                     CiljStednje(it.getLong("id"), it.getString("naziv"), it.getLong("ciljCenti"), it.getLong("ustedjenoCenti"), it.dugiIliNull("rokEpochDan"), it.getString("bojaHex"), it.getString("ikonaNaziv"), it.dugiIliNull("kreiranEpochDan"))
                 },
                 novcanici = (o.optJSONArray("novcanici") ?: JSONArray()).mapiraj {
-                    Novcanik(it.getLong("id"), it.getString("naziv"), it.getString("valuta"), it.optInt("redoslijed"))
+                    Novcanik(it.getLong("id"), it.getString("naziv"), it.getString("valuta"), it.optInt("redoslijed"), it.dugiIliNull("rokEpochDan"))
                 },
                 promjeneNovcanika = (o.optJSONArray("promjeneNovcanika") ?: JSONArray()).mapiraj {
                     PromjenaNovcanika(it.getLong("id"), it.getLong("novcanikId"), it.getLong("jedinice"), it.getLong("epochDan"), it.dugiIliNull("ulozenoCenti"), it.optString("napomena"), it.dugiIliNull("grupaId"))
@@ -339,6 +358,12 @@ class BackupManager private constructor(private val context: Context) {
                     )
                 },
                 postavkeAplikacije = o.optJSONObject("postavkeAplikacije"),
+                pozicije = (o.optJSONArray("pozicije") ?: JSONArray()).mapiraj {
+                    Pozicija(it.getLong("id"), it.getString("simbol"), it.getString("naziv"), it.getString("vrsta"), it.getString("valuta"), it.optInt("redoslijed"), it.dugiIliNull("nominalCenti"), it.dugiIliNull("dospijeceEpochDan"))
+                },
+                promjenePozicija = (o.optJSONArray("promjenePozicija") ?: JSONArray()).mapiraj {
+                    PromjenaPozicije(it.getLong("id"), it.getLong("pozicijaId"), it.getLong("kolicinaMikro"), it.getLong("epochDan"), it.dugiIliNull("ulozenoCenti"), it.optString("napomena"))
+                },
             )
         }
     }

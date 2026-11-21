@@ -146,8 +146,8 @@ fun NovcaniciKartica(
                             preracun != null -> "≈ " + Valute.iznos(preracun, osnovna)
                             t.ucitava -> "preračunavam…"
                             else -> "nema tečaja"
-                        },
-                        style = Tip.malo, maxLines = 1,
+                        } + (s.novcanik.rokEpochDan?.let { " · " + hr.smartbudget.app.domain.Rokovi.opis(LocalDate.ofEpochDay(it)) } ?: ""),
+                        style = Tip.malo, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -174,10 +174,17 @@ fun NovcanikSheet(
     onObrisi: (Novcanik) -> Unit,
     onPromjena: (PromjenaNovcanika) -> Unit,
     onObrisiPromjenu: (PromjenaNovcanika) -> Unit,
+    /** Nazivi računa na koje može ići novac od isplate. */
+    racuni: List<String> = emptyList(),
+    /** Isplata s opcionalnim priljevom na račun: promjena, račun (null = ne na račun), iznos u centima, opis. */
+    onIsplata: (PromjenaNovcanika, String?, Long?, String) -> Unit = { p, _, _, _ -> onPromjena(p) },
     onZatvori: () -> Unit,
 ) {
     val osnovna = osnovnaValuta()
     var valuta by remember { mutableStateOf(s?.valuta ?: Valute.po("USD")) }
+    var racun by remember { mutableStateOf(racuni.firstOrNull { it == hr.smartbudget.app.data.NacinPlacanja.TEKUCI } ?: racuni.firstOrNull()) }
+    var iznosNaRacun by remember { mutableStateOf("") }
+    var biramRok by remember { mutableStateOf(false) }
     var naziv by remember { mutableStateOf(s?.novcanik?.naziv ?: "") }
     var uredujem by remember { mutableStateOf(s == null) }
     var uplata by remember { mutableStateOf(true) }
@@ -219,6 +226,21 @@ fun NovcanikSheet(
                     IzvorTecajeva(t, kripto = s.valuta.kripto, fiat = !s.valuta.kripto || osnovna.kod != "EUR")
                 }
             }
+            // Rok štednje (podsjetnici 30, 15, 5, 1 dan prije i na dan isteka)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    s.novcanik.rokEpochDan?.let { "Rok: " + hr.smartbudget.app.domain.Rokovi.opis(LocalDate.ofEpochDay(it)) } ?: "Rok štednje nije postavljen",
+                    style = Tip.malo, modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (s.novcanik.rokEpochDan == null) "Postavi" else "Promijeni", color = Neon.Cijan, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { biramRok = true }.padding(horizontal = 6.dp, vertical = 6.dp),
+                )
+                if (s.novcanik.rokEpochDan != null) Text(
+                    "Ukloni", color = Neon.TekstSiv, fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onSpremi(s.novcanik.copy(rokEpochDan = null)) }.padding(horizontal = 6.dp, vertical = 6.dp),
+                )
+            }
             // Uplata ili isplata
             Segmenti(listOf("Uplata", "Isplata"), if (uplata) 0 else 1, { uplata = it == 0; greska = null }, boje = listOf(Neon.Zelena, Neon.Jantar))
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -236,6 +258,15 @@ fun NovcanikSheet(
                     NeonPolje(placeno, { placeno = it }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true)
                 }
             }
+            if (!uplata) {
+                OdredisteNovca(racuni, racun) { racun = it }
+                if (racun != null && s.valuta.kod != osnovna.kod) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OznakaPolja("Iznos na računu (${osnovna.kod}, prazno = po današnjem tečaju)")
+                        NeonPolje(iznosNaRacun, { iznosNaRacun = it }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true)
+                    }
+                }
+            }
             NeonPolje(napomena, { napomena = it }, Modifier.fillMaxWidth(), placeholder = "Napomena (opcionalno)")
             greska?.let { Text(it, color = Neon.Crvena, fontSize = 12.sp) }
             PrimarniGumb(if (uplata) "Dodaj uplatu" else "Dodaj isplatu", onClick = {
@@ -244,14 +275,19 @@ fun NovcanikSheet(
                     j == null || j <= 0 -> greska = if (s.valuta.kripto) "Unesite iznos (najviše 8 decimala)." else "Unesite iznos."
                     !uplata && j > s.stanje -> greska = "U novčaniku je samo ${Valute.iznos(s.stanje, s.valuta)}."
                     else -> {
-                        onPromjena(
-                            PromjenaNovcanika(
-                                novcanikId = s.novcanik.id, jedinice = if (uplata) j else -j, epochDan = LocalDate.now().toEpochDay(),
-                                ulozenoCenti = if (uplata && s.valuta.kripto) Novac.parsiraj(placeno)?.takeIf { it > 0 } else null,
-                                napomena = napomena.trim(),
-                            ),
+                        val promjena = PromjenaNovcanika(
+                            novcanikId = s.novcanik.id, jedinice = if (uplata) j else -j, epochDan = LocalDate.now().toEpochDay(),
+                            ulozenoCenti = if (uplata && s.valuta.kripto) Novac.parsiraj(placeno)?.takeIf { it > 0 } else null,
+                            napomena = napomena.trim(),
                         )
-                        iznos = ""; placeno = ""; napomena = ""
+                        if (uplata) onPromjena(promjena)
+                        else {
+                            // Iznos u osnovnoj valuti: upisani ili po današnjem tečaju
+                            val naRacun = Novac.parsiraj(iznosNaRacun)?.takeIf { it > 0 }
+                                ?: (if (s.valuta.kod == osnovna.kod) j else t.pretvori(j, s.valuta, osnovna)?.let { kotlin.math.round(it * 100).toLong() })
+                            onIsplata(promjena, racun, naRacun, "Isplata: ${s.novcanik.naziv}")
+                        }
+                        iznos = ""; placeno = ""; napomena = ""; iznosNaRacun = ""
                     }
                 }
             }, ikona = "check")
@@ -311,6 +347,11 @@ fun NovcanikSheet(
                 TonalniGumb("Obriši", { potvrda = true }, Modifier.weight(1f), boja = Neon.Crvena)
             }
         }
+    }
+    if (biramRok && s != null) {
+        BiracDatumaDijalog(s.novcanik.rokEpochDan?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now().plusYears(1), {
+            onSpremi(s.novcanik.copy(rokEpochDan = it.toEpochDay()))
+        }) { biramRok = false }
     }
     if (potvrda && s != null) {
         PotvrdaBrisanja("Obrisati novčanik?", "\"${s.novcanik.naziv}\" i sva njegova povijest bit će obrisani.", { potvrda = false }) {
@@ -443,6 +484,10 @@ fun StednjaTab(
     onPrijenos: () -> Unit,
     ciljeviKartica: @Composable () -> Unit,
     novcaniciKartica: @Composable () -> Unit,
+    /** Vrijednost ulaganja (dionice, ETF-ovi, obveznice, roba) u osnovnoj valuti i njihov broj. */
+    ulaganja: Double = 0.0,
+    brojUlaganja: Int = 0,
+    ulaganjaKartica: @Composable () -> Unit = {},
 ) {
     val treba = novcanici.isNotEmpty() || uplate.any { it.valuta != null }
     LaunchedEffect(treba) { if (treba) onOsvjezi() }
@@ -454,10 +499,13 @@ fun StednjaTab(
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         hr.smartbudget.app.ui.Kartica(razmak = 12.dp, sjaj = Neon.LjubicastaSvijetla) {
             Text("Ukupna štednja", style = Tip.oznaka)
-            Text(Valute.iznos(uCiljevima + uNovcanicima, osnovna), fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = Neon.LjubicastaTekst, maxLines = 1, modifier = Modifier.skrivaStednju())
+            Text(Valute.iznos(uCiljevima + uNovcanicima + ulaganja, osnovna), fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = Neon.LjubicastaTekst, maxLines = 1, modifier = Modifier.skrivaStednju())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PlocicaStednje("Ciljevi", Valute.iznos(uCiljevima, osnovna), if (ukupnoCilj > 0) "od ${Valute.iznos(ukupnoCilj, osnovna)}" else "${ciljevi.size} ciljeva", Modifier.weight(1f))
                 PlocicaStednje("U valutama", Valute.iznos(uNovcanicima, osnovna), "${novcanici.size} novčanika", Modifier.weight(1f))
+            }
+            if (brojUlaganja > 0) {
+                PlocicaStednje("Ulaganja", Valute.iznos(ulaganja, osnovna), "$brojUlaganja · dionice, ETF-ovi, obveznice, roba", Modifier.fillMaxWidth())
             }
             TonalniGumb("Prenesi s računa na štednju", onPrijenos, Modifier.fillMaxWidth(), ikona = "transfer", boja = Neon.LjubicastaSvijetla, visina = 48.dp)
             if (novcanici.any { it.valuta.kod != osnovna.kod } || uplate.any { it.valuta != null }) {
@@ -466,6 +514,7 @@ fun StednjaTab(
         }
         ciljeviKartica()
         novcaniciKartica()
+        ulaganjaKartica()
     }
 }
 

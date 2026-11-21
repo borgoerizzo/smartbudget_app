@@ -272,3 +272,45 @@ interface PostavkeDao {
     @Upsert
     suspend fun spremi(p: PostavkeCiklusa)
 }
+
+@Dao
+interface PozicijaDao {
+    @Query("SELECT * FROM pozicije ORDER BY redoslijed, id")
+    fun promatrajSve(): Flow<List<Pozicija>>
+
+    @Query("SELECT * FROM pozicije")
+    suspend fun sve(): List<Pozicija>
+
+    @Upsert
+    suspend fun spremi(p: Pozicija): Long
+
+    @Delete
+    suspend fun obrisi(p: Pozicija)
+
+    @Insert
+    suspend fun umetni(lista: List<Pozicija>)
+
+    @Query("DELETE FROM pozicije")
+    suspend fun obrisiSve()
+
+    @Query("SELECT * FROM promjene_pozicija ORDER BY epochDan DESC, id DESC")
+    fun promatrajPromjene(): Flow<List<PromjenaPozicije>>
+
+    @Query("SELECT * FROM promjene_pozicija")
+    suspend fun svePromjene(): List<PromjenaPozicije>
+
+    @Insert
+    suspend fun umetniPromjenu(p: PromjenaPozicije): Long
+
+    @Insert
+    suspend fun umetniPromjene(lista: List<PromjenaPozicije>)
+
+    @Delete
+    suspend fun obrisiPromjenu(p: PromjenaPozicije)
+
+    @Query("DELETE FROM promjene_pozicija WHERE pozicijaId = :id")
+    suspend fun obrisiPromjeneZa(id: Long)
+
+    @Query("DELETE FROM promjene_pozicija")
+    suspend fun obrisiSvePromjene()
+}

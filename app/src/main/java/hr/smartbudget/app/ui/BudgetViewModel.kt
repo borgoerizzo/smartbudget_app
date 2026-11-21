@@ -44,6 +44,7 @@ import hr.smartbudget.app.export.FormatIzvoza
 import hr.smartbudget.app.export.Izvoz
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -180,6 +181,22 @@ data class StanjeTecajeva(
         hr.smartbudget.app.data.Tecajevi.pretvori(hr.smartbudget.app.domain.Valute.uBroj(jedinice, iz), iz, u, hnb, kripto)
 }
 
+/** Trenutne cijene ulaganja korisnika po simbolu. */
+data class CijeneUlaganja(
+    val kotacije: Map<String, hr.smartbudget.app.data.Kotacija> = emptyMap(),
+    val ucitava: Boolean = false,
+    val greska: String? = null,
+    val dohvaceno: Long = 0,
+)
+
+/** Dnevne cijene ulaganja (u valuti kotacije) za graf. */
+data class PovijestUlaganja(
+    val cijene: Map<String, List<Pair<LocalDate, Double>>> = emptyMap(),
+    val dana: Int = 90,
+    val ucitava: Boolean = false,
+    val greska: String? = null,
+)
+
 data class KriptoPovijest(
     val cijene: Map<String, List<Pair<LocalDate, Double>>> = emptyMap(),
     val dana: Int = 90,
@@ -294,11 +311,90 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun spremiNovcanik(n: hr.smartbudget.app.data.Novcanik) = repo.opseg.launch {
-        repo.spremiNovcanik(n); _poruke.tryEmit(if (n.id == 0L) "Novčanik dodan" else "Novčanik spremljen")
+        repo.spremiNovcanik(n); _poruke.tryEmit(if (n.id == 0L) "Novčanik dodan" else "Novčanik spremljen"); runCatching { repo.provjeriRokove() }
     }
     fun obrisiNovcanik(n: hr.smartbudget.app.data.Novcanik) = repo.opseg.launch { repo.obrisiNovcanik(n); _poruke.tryEmit("Novčanik obrisan") }
     fun dodajPromjenu(p: hr.smartbudget.app.data.PromjenaNovcanika) = repo.opseg.launch { repo.dodajPromjenu(p) }
     fun obrisiPromjenu(p: hr.smartbudget.app.data.PromjenaNovcanika) = repo.opseg.launch { repo.obrisiPromjenu(p) }
+
+    // --- Ulaganja u vlasništvu (dionice, ETF-ovi, obveznice, roba) ---
+
+    val pozicije: StateFlow<List<hr.smartbudget.app.domain.StanjePozicije>> =
+        combine(repo.db.pozicije().promatrajSve(), repo.db.pozicije().promatrajPromjene()) { p, pr -> hr.smartbudget.app.domain.Portfelj.stanja(p, pr) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _cijeneUlaganja = MutableStateFlow(CijeneUlaganja())
+    val cijeneUlaganja: StateFlow<CijeneUlaganja> = _cijeneUlaganja
+
+    /** Trenutne cijene (i ocjene analitičara) za sva ulaganja korisnika. */
+    fun osvjeziCijeneUlaganja() {
+        // Ručno uneseni zapisi nemaju tržišnu cijenu.
+        val simboli = pozicije.value.filter { !it.pozicija.rucno }.map { it.pozicija.simbol }.distinct()
+        if (simboli.isEmpty() || _cijeneUlaganja.value.ucitava) return
+        _cijeneUlaganja.value = _cijeneUlaganja.value.copy(ucitava = true, greska = null)
+        viewModelScope.launch {
+            val r = runCatching { hr.smartbudget.app.data.Trziste.kotacijeUlaganja(simboli) }
+            _cijeneUlaganja.value = CijeneUlaganja(
+                kotacije = r.getOrNull()?.let { _cijeneUlaganja.value.kotacije + it } ?: _cijeneUlaganja.value.kotacije,
+                ucitava = false,
+                greska = r.exceptionOrNull()?.let { "Cijene se ne mogu dohvatiti. Provjerite internetsku vezu." },
+                dohvaceno = if (r.isSuccess) System.currentTimeMillis() else _cijeneUlaganja.value.dohvaceno,
+            )
+        }
+    }
+
+    private val _povijestUlaganja = MutableStateFlow(PovijestUlaganja())
+    val povijestUlaganja: StateFlow<PovijestUlaganja> = _povijestUlaganja
+
+    /** Dnevne cijene ulaganja za graf u analitici. */
+    fun osvjeziPovijestUlaganja(dana: Int) {
+        val simboli = pozicije.value.filter { it.kolicinaMikro > 0 && !it.pozicija.rucno }.map { it.pozicija.simbol }.distinct()
+        if (simboli.isEmpty() || _povijestUlaganja.value.ucitava) return
+        _povijestUlaganja.value = _povijestUlaganja.value.copy(ucitava = true, greska = null, dana = dana)
+        viewModelScope.launch {
+            val rez = simboli.map { s -> async { s to runCatching { hr.smartbudget.app.data.Trziste.dnevnaPovijest(s, dana) } } }.awaitAll()
+            _povijestUlaganja.value = PovijestUlaganja(
+                cijene = rez.mapNotNull { (s, r) -> r.getOrNull()?.takeIf { it.isNotEmpty() }?.let { s to it } }.toMap(),
+                dana = dana, ucitava = false,
+                greska = if (rez.any { it.second.isFailure }) "Povijest cijena se ne može dohvatiti. Provjerite internetsku vezu." else null,
+            )
+        }
+    }
+
+    fun dodajPoziciju(p: hr.smartbudget.app.data.Pozicija, prva: hr.smartbudget.app.data.PromjenaPozicije?) = repo.opseg.launch {
+        repo.dodajPoziciju(p, prva); _poruke.tryEmit("Ulaganje dodano: ${p.naziv}"); runCatching { repo.provjeriRokove() }
+        kotlinx.coroutines.delay(300); osvjeziCijeneUlaganja()
+    }
+    fun spremiPoziciju(p: hr.smartbudget.app.data.Pozicija) = repo.opseg.launch {
+        repo.spremiPoziciju(p); _poruke.tryEmit("Ulaganje spremljeno"); runCatching { repo.provjeriRokove() }
+    }
+    fun obrisiPoziciju(p: hr.smartbudget.app.data.Pozicija) = repo.opseg.launch { repo.obrisiPoziciju(p); _poruke.tryEmit("Ulaganje obrisano") }
+    fun dodajPromjenuPozicije(p: hr.smartbudget.app.data.PromjenaPozicije) = repo.opseg.launch { repo.dodajPromjenuPozicije(p) }
+    fun obrisiPromjenuPozicije(p: hr.smartbudget.app.data.PromjenaPozicije) = repo.opseg.launch { repo.obrisiPromjenuPozicije(p) }
+
+    /** Podsjetnici na rok ulaganja (pri otvaranju aplikacije i nakon promjene roka). */
+    fun provjeriRokove() = repo.opseg.launch { runCatching { repo.provjeriRokove() } }
+
+    /**
+     * Prodaja ili isplata iz štednje: zapis promjene i, ako je odabran račun, priljev na taj račun kao prijenos
+     * sa štednje (vraća stanje ciklusa, ali se ne broji kao prihod). [racun] null = samo evidencija.
+     */
+    fun prodajaPozicije(p: hr.smartbudget.app.data.PromjenaPozicije, racun: String?, iznosCenti: Long?, opis: String) = repo.opseg.launch {
+        repo.dodajPromjenuPozicije(p)
+        if (racun != null && iznosCenti != null && iznosCenti > 0) {
+            repo.prijenosSaStednje(racun, iznosCenti, System.currentTimeMillis(), opis, null, null, 0)
+            _poruke.tryEmit("Isplaćeno na račun $racun")
+        } else _poruke.tryEmit("Zabilježeno")
+    }
+
+    /** Isplata iz novčanika (valute, kripto) s opcionalnim priljevom na račun. */
+    fun isplataNovcanika(p: hr.smartbudget.app.data.PromjenaNovcanika, racun: String?, iznosCenti: Long?, opis: String) = repo.opseg.launch {
+        repo.dodajPromjenu(p)
+        if (racun != null && iznosCenti != null && iznosCenti > 0) {
+            repo.prijenosSaStednje(racun, iznosCenti, System.currentTimeMillis(), opis, null, null, 0)
+            _poruke.tryEmit("Isplaćeno na račun $racun")
+        }
+    }
 
     /** Višak (prihodi − rashodi) prošlog ciklusa, kao prijedlog za uplatu na cilj; null ako ga nema. */
     val visakProslogCiklusa: StateFlow<Long?> = combine(cycleManager, danas) { cm, d -> cm.ciklusZaSidro(cm.ciklusZa(d).sidro.minusMonths(1)) }

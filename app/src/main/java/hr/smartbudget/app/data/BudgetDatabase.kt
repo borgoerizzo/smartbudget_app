@@ -11,8 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class,
         PrilagodbaCiklusa::class, Racun::class, CiljStednje::class, UplataCilja::class, Novcanik::class, PromjenaNovcanika::class,
+        Pozicija::class, PromjenaPozicije::class,
     ],
-    version = 9,
+    version = 11,
     exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
@@ -25,6 +26,7 @@ abstract class BudgetDatabase : RoomDatabase() {
     abstract fun ciljevi(): CiljDao
     abstract fun uplate(): UplataDao
     abstract fun novcanici(): NovcanikDao
+    abstract fun pozicije(): PozicijaDao
 
     companion object {
         /** Tekući račun, Kartica i Gotovina (dosadašnji načini plaćanja). */
@@ -46,7 +48,7 @@ abstract class BudgetDatabase : RoomDatabase() {
         fun get(context: Context): BudgetDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, BudgetDatabase::class.java, "smartbudget.db")
                 .addCallback(Pocetni)
-                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7, MIGRACIJA_7_8, MIGRACIJA_8_9)
+                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7, MIGRACIJA_7_8, MIGRACIJA_8_9, MIGRACIJA_9_10, MIGRACIJA_10_11)
                 .build()
                 .also { instance = it }
         }
@@ -162,6 +164,33 @@ abstract class BudgetDatabase : RoomDatabase() {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `uplate_cilja` ADD COLUMN `grupaId` INTEGER")
             db.execSQL("ALTER TABLE `promjene_novcanika` ADD COLUMN `grupaId` INTEGER")
+        }
+    }
+
+    /** v10: ulaganja u vlasništvu (dionice, ETF-ovi, obveznice, roba) i njihove kupnje i prodaje. */
+    private object MIGRACIJA_9_10 : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `pozicije` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `simbol` TEXT NOT NULL, " +
+                    "`naziv` TEXT NOT NULL, `vrsta` TEXT NOT NULL, `valuta` TEXT NOT NULL, `redoslijed` INTEGER NOT NULL)",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `promjene_pozicija` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `pozicijaId` INTEGER NOT NULL, " +
+                    "`kolicinaMikro` INTEGER NOT NULL, `epochDan` INTEGER NOT NULL, `ulozenoCenti` INTEGER, `napomena` TEXT NOT NULL)",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_promjene_pozicija_pozicijaId` ON `promjene_pozicija` (`pozicijaId`)")
+        }
+    }
+
+    /**
+     * v11: ručni unos državnih zapisa i obveznica bez tržišne cijene (iznos pri dospijeću) te rok
+     * za sva ulaganja i novčanike (podsjetnici prije isteka).
+     */
+    private object MIGRACIJA_10_11 : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `pozicije` ADD COLUMN `nominalCenti` INTEGER")
+            db.execSQL("ALTER TABLE `pozicije` ADD COLUMN `dospijeceEpochDan` INTEGER")
+            db.execSQL("ALTER TABLE `novcanici` ADD COLUMN `rokEpochDan` INTEGER")
         }
     }
 

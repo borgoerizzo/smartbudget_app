@@ -182,7 +182,8 @@ private fun BiracVrste(odabrana: VrstaUlaganja, onOdabir: (VrstaUlaganja) -> Uni
         VrstaUlaganja.entries.forEach { v ->
             val aktivna = v == odabrana
             val oblik = RoundedCornerShape(20.dp)
-            Column(
+            // Ikona u sredini pločice, naziv centriran pri dnu.
+            Box(
                 Modifier
                     .width(96.dp)
                     .height(112.dp)
@@ -191,13 +192,19 @@ private fun BiracVrste(odabrana: VrstaUlaganja, onOdabir: (VrstaUlaganja) -> Uni
                     .background(if (aktivna) v.boja.copy(alpha = .14f) else Neon.Kartica)
                     .border(1.dp, if (aktivna) v.boja.copy(alpha = .55f) else Neon.Rub, oblik)
                     .clickable(onClickLabel = v.naziv) { onOdabir(v) }
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
             ) {
-                Box(Modifier.size(34.dp).clip(CircleShape).background(v.boja.copy(alpha = .16f)), contentAlignment = Alignment.Center) {
-                    Icon(Ikone.ui(v.ikona), null, Modifier.size(18.dp), tint = v.boja)
+                Box(
+                    Modifier.align(Alignment.Center).padding(bottom = 18.dp).size(44.dp).clip(CircleShape).background(v.boja.copy(alpha = .16f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Ikone.ui(v.ikona), null, Modifier.size(24.dp), tint = v.boja)
                 }
-                Text(v.naziv, color = if (aktivna) Neon.Tekst else Neon.TekstSvijetliSiv, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold, maxLines = 2)
+                Text(
+                    v.naslovPlocice, color = if (aktivna) Neon.Tekst else Neon.TekstSvijetliSiv, fontSize = 13.sp, lineHeight = 15.sp,
+                    fontWeight = FontWeight.Bold, maxLines = 2, textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                )
             }
         }
     }
@@ -276,15 +283,18 @@ private fun KarticaListe(l: ListaUlaganja, boja: Color, mini: Map<String, List<D
 }
 
 /** Kratka oznaka bez tehničkih nastavaka (^, =F, -USD). */
-private fun kratkiSimbol(s: String) = s.removePrefix("^").substringBefore("=").substringBefore("-").substringBefore(".")
+internal fun kratkiSimbol(s: String) = s.removePrefix("^").substringBefore("=").substringBefore("-").substringBefore(".")
 
 private fun oznakaSimbola(k: Kotacija) = kratkiSimbol(k.simbol) + (k.burza?.let { " · $it" } ?: "")
 
 @Composable
-private fun Avatar(k: Kotacija, velicina: Dp = 40.dp) {
+internal fun Avatar(k: Kotacija, velicina: Dp = 40.dp) = AvatarSimbola(k.simbol, velicina)
+
+@Composable
+internal fun AvatarSimbola(simbol: String, velicina: Dp = 40.dp) {
     val paleta = listOf(Neon.Zelena, Neon.Cijan, Neon.Ljubicasta, Neon.Jantar, Neon.Crvena, Neon.LjubicastaSvijetla)
-    val boja = paleta[abs(k.simbol.hashCode()) % paleta.size]
-    val tekst = kratkiSimbol(k.simbol).take(4)
+    val boja = paleta[abs(simbol.hashCode()) % paleta.size]
+    val tekst = kratkiSimbol(simbol).take(4)
     Box(Modifier.size(velicina).clip(CircleShape).background(boja.copy(alpha = .16f)).border(1.dp, boja.copy(alpha = .35f), CircleShape), contentAlignment = Alignment.Center) {
         Text(tekst, color = boja, fontSize = if (tekst.length > 3) 10.sp else 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
     }
@@ -526,8 +536,8 @@ private fun KljucniPodaci(k: Kotacija) {
     val stavke = listOfNotNull(
         k.otvaranje?.let { "Otvaranje" to c(it) },
         k.prethodnoZatvaranje?.let { "Prethodno zatvaranje" to c(it) },
-        if (k.dnevniMin != null && k.dnevniMax != null) "Dnevni raspon" to "${FormatTrzista.broj(k.dnevniMin, FormatTrzista.decimale(k.dnevniMin))} – ${c(k.dnevniMax)}" else null,
-        if (k.min52 != null && k.max52 != null) "Raspon 52 tjedna" to "${FormatTrzista.broj(k.min52, FormatTrzista.decimale(k.min52))} – ${c(k.max52)}" else null,
+        if (k.dnevniMin != null && k.dnevniMax != null) "Dnevni raspon" to "${FormatTrzista.broj(k.dnevniMin, FormatTrzista.decimale(k.dnevniMin))}–${c(k.dnevniMax)}" else null,
+        if (k.min52 != null && k.max52 != null) "Raspon 52 tjedna" to "${FormatTrzista.broj(k.min52, FormatTrzista.decimale(k.min52))}–${c(k.max52)}" else null,
         k.trzisnaKap?.let { "Tržišna kapitalizacija" to FormatTrzista.veliki(it) + " " + k.valuta },
         k.volumen?.let { "Promet danas" to FormatTrzista.veliki(it.toDouble()) },
         k.prosjVolumen3m?.let { "Prosj. promet (3 mj.)" to FormatTrzista.veliki(it.toDouble()) },
@@ -543,7 +553,12 @@ private fun KljucniPodaci(k: Kotacija) {
                 par.forEach { (n, v) ->
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(n, style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
-                        Text(v, color = Neon.Tekst, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                        // Iznos i valuta u jednom redu: tekst se po potrebi malo smanji.
+                        androidx.compose.foundation.text.BasicText(
+                            v, maxLines = 1,
+                            style = androidx.compose.ui.text.TextStyle(color = Neon.Tekst, fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
+                            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 14.sp, stepSize = 0.5.sp),
+                        )
                     }
                 }
                 if (par.size == 1) Spacer(Modifier.weight(1f))

@@ -93,6 +93,8 @@ fun AnalitikaEkran(
     stednja: @Composable () -> Unit = {},
     imaKripta: Boolean = false,
     kripto: @Composable () -> Unit = {},
+    imaUlaganja: Boolean = false,
+    ulaganja: @Composable () -> Unit = {},
 ) {
     val appPostavke = hr.smartbudget.app.data.AppPostavke.get(androidx.compose.ui.platform.LocalContext.current)
     val postavke by appPostavke.stanje.collectAsState()
@@ -127,6 +129,7 @@ fun AnalitikaEkran(
                 "ciljevi" -> if (imaCiljeva) item(k.kljuc) { ciljevi() }
                 "stednja" -> if (imaStednje) item(k.kljuc) { stednja() }
                 "kripto" -> if (imaKripta) item(k.kljuc) { kripto() }
+                "ulaganja" -> if (imaUlaganja) item(k.kljuc) { ulaganja() }
             }
         }
     }
@@ -153,6 +156,7 @@ val KARTICE_ANALITIKE = listOf(
     StavkaRasporeda("ciljevi", "Ciljevi štednje", "kad postoji cilj"),
     StavkaRasporeda("stednja", "Štednja", "kad postoji štednja"),
     StavkaRasporeda("kripto", "Kriptovalute", "kad postoji kripto novčanik"),
+    StavkaRasporeda("ulaganja", "Moja ulaganja", "kad postoje dionice, ETF-ovi, obveznice ili roba"),
 )
 
 private val bojaNeto = Neon.LjubicastaSvijetla

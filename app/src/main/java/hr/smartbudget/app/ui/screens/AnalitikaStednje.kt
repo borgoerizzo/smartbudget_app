@@ -78,8 +78,10 @@ fun StednjaAnalitikaKartica(
     novcanici: List<StanjeNovcanika>,
     t: StanjeTecajeva,
     onOsvjezi: () -> Unit,
+    /** Vrijednost ulaganja u osnovnoj valuti (dionice, ETF-ovi, obveznice, roba). */
+    ulaganja: Double = 0.0,
 ) {
-    if (ciljevi.isEmpty() && novcanici.isEmpty()) return
+    if (ciljevi.isEmpty() && novcanici.isEmpty() && ulaganja <= 0) return
     val trebaTecaj = novcanici.isNotEmpty() || uplate.any { it.valuta != null }
     LaunchedEffect(trebaTecaj) { if (trebaTecaj && t.hnb == null && t.kripto == null) onOsvjezi() }
     val osnovna = osnovnaValuta()
@@ -92,13 +94,14 @@ fun StednjaAnalitikaKartica(
         novcanici.groupBy { it.valuta }.forEach { (v, l) ->
             uOsnovnu(l.sumOf { it.stanje }, v)?.takeIf { it > 0 }?.let { add((if (v.kod == osnovna.kod) "Novčanici ${v.kod}" else v.kod) to it) }
         }
+        if (ulaganja > 0) add("Ulaganja" to ulaganja)
     }.sortedByDescending { it.second }
     val ukupno = dijelovi.sumOf { it.second }
     val mjesecno = uplatePoMjesecima(uplate, novcanici, ::uOsnovnu)
     val prosjek = mjesecno.map { it.second }.average()
 
     Kartica(razmak = 14.dp) {
-        NaslovKartice("Štednja", "Ciljevi i novčanici, preračunato u ${osnovna.kod}")
+        NaslovKartice("Štednja", "Ciljevi, novčanici i ulaganja, preračunato u ${osnovna.kod}")
         Text(Valute.iznos(ukupno, osnovna), fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Neon.Zelena, modifier = Modifier.skrivaStednju())
 
         // Sastav kao jedna složena traka s legendom

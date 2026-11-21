@@ -347,6 +347,46 @@ class BudgetRepository private constructor(val context: Context) {
     suspend fun dodajPromjenu(p: PromjenaNovcanika) = db.novcanici().umetniPromjenu(p).also { BackupManager.get(context).nakonPromjene() }
     suspend fun obrisiPromjenu(p: PromjenaNovcanika) = db.novcanici().obrisiPromjenu(p).also { BackupManager.get(context).nakonPromjene() }
 
+    /**
+     * Podsjetnici na rok ulaganja i novčanika (30, 15, 5, 1 dan prije i na dan isteka). Poziva se iz
+     * pozadinskog posla i pri otvaranju aplikacije; svaki prag šalje se samo jednom.
+     */
+    suspend fun provjeriRokove() {
+        val post = AppPostavke.get(context)
+        if (!post.stanje.value.obavijestRok) return
+        val poz = hr.smartbudget.app.domain.Portfelj.stanja(db.pozicije().sve(), db.pozicije().svePromjene())
+            .filter { it.kolicinaMikro > 0 && it.pozicija.dospijeceEpochDan != null }
+        val nov = hr.smartbudget.app.domain.stanjaNovcanika(db.novcanici().sve(), db.novcanici().svePromjene())
+            .filter { it.stanje > 0 && it.novcanik.rokEpochDan != null }
+        val rokovi = poz.map { hr.smartbudget.app.domain.Rokovi.Rok("p${it.pozicija.id}", it.pozicija.naziv, LocalDate.ofEpochDay(it.pozicija.dospijeceEpochDan!!)) } +
+            nov.map { hr.smartbudget.app.domain.Rokovi.Rok("n${it.novcanik.id}", it.novcanik.naziv, LocalDate.ofEpochDay(it.novcanik.rokEpochDan!!)) }
+        val zaSlanje = hr.smartbudget.app.domain.Rokovi.zaDanas(rokovi, LocalDate.now(), post.rokoviPoslani())
+        if (zaSlanje.isEmpty()) return
+        Obavijesti.rok(context, zaSlanje.map { it.rok.naziv to it.dana })
+        post.oznaciRokove(zaSlanje.flatMap { it.kljucevi })
+    }
+
+    // --- Ulaganja u vlasništvu (dionice, ETF-ovi, obveznice, roba) ---
+
+    /** Novo ulaganje s prvom kupnjom; ako isti simbol već postoji, kupnja se dodaje njemu. Vraća id. */
+    suspend fun dodajPoziciju(p: Pozicija, prva: PromjenaPozicije?): Long = db.withTransaction {
+        // Ručno uneseni zapis je uvijek zaseban (svaki ima svoj iznos i datum dospijeća).
+        val postojeca = if (p.rucno) null else db.pozicije().sve().firstOrNull { !it.rucno && it.simbol.equals(p.simbol, ignoreCase = true) }
+        val id = postojeca?.id ?: db.pozicije().spremi(p)
+        prva?.let { db.pozicije().umetniPromjenu(it.copy(pozicijaId = id)) }
+        id
+    }.also { BackupManager.get(context).nakonPromjene() }
+
+    suspend fun spremiPoziciju(p: Pozicija) = db.pozicije().spremi(p).also { BackupManager.get(context).nakonPromjene() }
+
+    suspend fun obrisiPoziciju(p: Pozicija) = db.withTransaction {
+        db.pozicije().obrisiPromjeneZa(p.id)
+        db.pozicije().obrisi(p)
+    }.also { BackupManager.get(context).nakonPromjene() }
+
+    suspend fun dodajPromjenuPozicije(p: PromjenaPozicije) = db.pozicije().umetniPromjenu(p).also { BackupManager.get(context).nakonPromjene() }
+    suspend fun obrisiPromjenuPozicije(p: PromjenaPozicije) = db.pozicije().obrisiPromjenu(p).also { BackupManager.get(context).nakonPromjene() }
+
     suspend fun obrisiCilj(c: CiljStednje) = db.withTransaction {
         db.uplate().obrisiZaCilj(c.id)
         db.ciljevi().obrisi(c)

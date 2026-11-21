@@ -16,7 +16,7 @@ import hr.smartbudget.app.MainActivity
 import hr.smartbudget.app.R
 import hr.smartbudget.app.domain.Novac
 
-enum class VrstaObavijesti { PONAVLJAJUCI, MINUS, PROGNOZA, PODSJETNIK, TJEDNI }
+enum class VrstaObavijesti { PONAVLJAJUCI, MINUS, PROGNOZA, PODSJETNIK, TJEDNI, ROK }
 
 /** Sadržaj obavijesti koji se prikazuje u aplikaciji kad korisnik dodirne obavijest. */
 data class InfoObavijesti(
@@ -36,6 +36,7 @@ object Obavijesti {
     private const val ID_TJEDNI = 1004
     private const val ID_PROGNOZA = 2000
     private const val ID_TEST = 3000
+    private const val ID_ROK = 4000
 
     private const val EXTRA_VRSTA = "obavijest_vrsta"
     private const val EXTRA_NASLOV = "obavijest_naslov"
@@ -139,6 +140,34 @@ object Obavijesti {
 
     fun tjedni(context: Context, rashodi: Long, prihodi: Long) = posalji(context, ID_TJEDNI, infoTjedni(rashodi, prihodi))
 
+    /** Opis koliko je do roka: "danas", "sutra", "za 5 dana". */
+    fun doRoka(dana: Int): String = when (dana) {
+        0 -> "danas"
+        1 -> "sutra"
+        else -> "za $dana dana"
+    }
+
+    private fun infoRok(stavke: List<Pair<String, Int>>, test: Boolean = false): InfoObavijesti {
+        val prvi = stavke.minBy { it.second }
+        val naslov = (if (test) "[Test] " else "") + when {
+            stavke.size > 1 -> "Rok ističe za ${stavke.size} ulaganja"
+            prvi.second == 0 -> "Danas ističe rok: ${prvi.first}"
+            else -> "${prvi.first}: rok ističe ${doRoka(prvi.second)}"
+        }
+        return InfoObavijesti(
+            VrstaObavijesti.ROK, naslov,
+            "Odlučite hoćete li reinvestirati ili podići novac.",
+            stavke.sortedBy { it.second }.map { (n, d) -> "$n · ${doRoka(d)}" },
+            test,
+        )
+    }
+
+    /** Podsjetnik na rok ulaganja: (naziv, dana do roka). */
+    fun rok(context: Context, stavke: List<Pair<String, Int>>) {
+        if (stavke.isEmpty()) return
+        posalji(context, ID_ROK, infoRok(stavke))
+    }
+
     /** Stvoreni ponavljajući unosi: (naziv, predznačeni iznos u centima). */
     fun ponavljajuci(context: Context, stavke: List<Pair<String, Long>>) {
         if (stavke.isEmpty() || !AppPostavke.get(context).stanje.value.obavijestPonavljajuci) return
@@ -169,6 +198,7 @@ object Obavijesti {
             VrstaObavijesti.PROGNOZA -> infoPrognoza("Namirnice", 37_200L, 30_000L, test = true)
             VrstaObavijesti.PODSJETNIK -> infoPodsjetnik(test = true)
             VrstaObavijesti.TJEDNI -> infoTjedni(31_240L, 0L, test = true)
+            VrstaObavijesti.ROK -> infoRok(listOf("Trezorski zapis RH RHMF-T-722N" to 5), test = true)
         }
         posalji(context, ID_TEST + vrsta.ordinal, info)
     }

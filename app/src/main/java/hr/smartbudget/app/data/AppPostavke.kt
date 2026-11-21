@@ -18,6 +18,8 @@ data class StanjePostavki(
     val obavijestPonavljajuci: Boolean = false,
     val obavijestMinus: Boolean = false,
     val obavijestPrognoza: Boolean = false,
+    /** Podsjetnik prije roka ulaganja (30, 15, 5 i 1 dan prije te na dan isteka). */
+    val obavijestRok: Boolean = true,
     val podsjetnik: Boolean = false,
     /** Vrijeme dnevnog podsjetnika u minutama od ponoći. */
     val podsjetnikMinuta: Int = 20 * 60,
@@ -54,6 +56,7 @@ class AppPostavke private constructor(context: Context) {
         obavijestPonavljajuci = prefs.getBoolean("obavijestPonavljajuci", false),
         obavijestMinus = prefs.getBoolean("obavijestMinus", false),
         obavijestPrognoza = prefs.getBoolean("obavijestPrognoza", false),
+        obavijestRok = prefs.getBoolean("obavijestRok", true),
         podsjetnik = prefs.getBoolean("podsjetnik", false),
         podsjetnikMinuta = prefs.getInt("podsjetnikMinuta", 20 * 60),
         tjedni = prefs.getBoolean("tjedni", false),
@@ -84,6 +87,14 @@ class AppPostavke private constructor(context: Context) {
     fun postaviObavijestPonavljajuci(v: Boolean) = postavi("obavijestPonavljajuci", v)
     fun postaviObavijestMinus(v: Boolean) = postavi("obavijestMinus", v)
     fun postaviObavijestPrognoza(v: Boolean) = postavi("obavijestPrognoza", v)
+    fun postaviObavijestRok(v: Boolean) = postavi("obavijestRok", v)
+
+    /** Već poslani podsjetnici na rok (ključ: ulaganje, rok i prag), da se svaki pošalje samo jednom. */
+    fun rokoviPoslani(): Set<String> = prefs.getStringSet("rokoviPoslani", emptySet())!!.toSet()
+    fun oznaciRokove(kljucevi: Collection<String>) {
+        if (kljucevi.isEmpty()) return
+        prefs.edit().putStringSet("rokoviPoslani", rokoviPoslani() + kljucevi).apply()
+    }
     fun postaviPodsjetnik(v: Boolean) = postavi("podsjetnik", v)
     fun postaviTjedni(v: Boolean) = postavi("tjedni", v)
     fun postaviTjedniDan(d: Int) { prefs.edit().putInt("tjedniDan", d).apply(); _stanje.value = ucitaj() }
@@ -180,7 +191,7 @@ class AppPostavke private constructor(context: Context) {
         }
 
         /** Ključevi koji ne ulaze u sigurnosnu kopiju (sigurnost i interno stanje obavijesti). */
-        private val NE_KOPIRA = setOf("pinHash", "pinSol", "zakljucavanje", "prognozePoslane", "zadnjeNegativno")
+        private val NE_KOPIRA = setOf("pinHash", "pinSol", "zakljucavanje", "prognozePoslane", "zadnjeNegativno", "rokoviPoslani")
 
         /** Prikaz skrivenog iznosa. */
         val ZASLONI = listOf("analitika", "budzeti")

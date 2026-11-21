@@ -104,6 +104,8 @@ data class Novcanik(
     val naziv: String,
     val valuta: String,
     val redoslijed: Int = 0,
+    /** Rok štednje u novčaniku (opcionalno), npr. kad se kripto planira prodati; aplikacija podsjeća prije isteka. */
+    val rokEpochDan: Long? = null,
 )
 
 /** Uplata (pozitivna) ili isplata (negativna) u novčaniku. */
@@ -118,6 +120,44 @@ data class PromjenaNovcanika(
     val napomena: String = "",
     /** [Transakcija.grupaId] prijenosa s računa (ili na račun) koji je stvorio ovu promjenu; null = ručna promjena. */
     val grupaId: Long? = null,
+)
+
+/**
+ * Ulaganje u vlasništvu korisnika (dionica, ETF, obveznica ili roba). Kriptovalute su u novčanicima.
+ * Vrijednost se računa iz tržišne cijene ([simbol] je oznaka na Yahoo Financeu) i preračunava u valutu aplikacije.
+ */
+@Entity(tableName = "pozicije")
+data class Pozicija(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val simbol: String,
+    val naziv: String,
+    /** [VrstaUlaganja] po imenu (DIONICE, ETF, OBVEZNICE, ROBA). */
+    val vrsta: String,
+    /** Valuta u kojoj kotira (USD, EUR, GBp…); kod ručnog unosa valuta iznosa. */
+    val valuta: String,
+    val redoslijed: Int = 0,
+    /**
+     * Ručni unos državnog zapisa ili obveznice koja nema tržišnu cijenu (npr. trezorski zapis RH "RHMF-T-722N"):
+     * iznos koji se dobiva pri dospijeću (centi). Vrijednost raste od uloženog prema tom iznosu do [dospijeceEpochDan].
+     */
+    val nominalCenti: Long? = null,
+    /** Rok ulaganja ili dospijeće (opcionalno za sva ulaganja); aplikacija podsjeća prije isteka. */
+    val dospijeceEpochDan: Long? = null,
+) {
+    val rucno: Boolean get() = nominalCenti != null
+}
+
+/** Kupnja (pozitivna količina) ili prodaja (negativna) ulaganja. */
+@Entity(tableName = "promjene_pozicija", indices = [Index("pozicijaId")])
+data class PromjenaPozicije(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val pozicijaId: Long,
+    /** Količina u milijuntinkama (dopušteni su dijelovi dionice): 1,5 → 1 500 000. */
+    val kolicinaMikro: Long,
+    val epochDan: Long,
+    /** Koliko je kupnja koštala u osnovnoj valuti aplikacije (opcionalno, za dobit/gubitak). */
+    val ulozenoCenti: Long? = null,
+    val napomena: String = "",
 )
 
 /** Stanje jednog računa iz transakcija (bez početnog stanja). */

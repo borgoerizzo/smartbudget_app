@@ -232,6 +232,12 @@ fun ObavijestiKartica(vm: BudgetViewModel) {
             onTest = { ukljuci { Obavijesti.test(ctx, VrstaObavijesti.PROGNOZA) } },
         ) { if (it) ukljuci { postavke.postaviObavijestPrognoza(true) } else postavke.postaviObavijestPrognoza(false) }
         RedakPrekidac(
+            "calendar", Neon.Jantar, "Rok ulaganja",
+            "Podsjetnik 30, 15, 5 i 1 dan prije isteka roka (trezorski zapisi, obveznice, ulaganja, novčanici) i na dan isteka",
+            p.obavijestRok,
+            onTest = { ukljuci { Obavijesti.test(ctx, VrstaObavijesti.ROK) } },
+        ) { if (it) ukljuci { postavke.postaviObavijestRok(true); vm.provjeriRokove() } else postavke.postaviObavijestRok(false) }
+        RedakPrekidac(
             "bell", Neon.Cijan, "Dnevni podsjetnik za unos",
             if (p.podsjetnik) "Svaki dan u %02d:%02d ako taj dan nema unosa".format(p.podsjetnikMinuta / 60, p.podsjetnikMinuta % 60)
             else "Podsjetnik ako tog dana niste ništa unijeli",

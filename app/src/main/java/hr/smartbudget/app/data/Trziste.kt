@@ -18,12 +18,17 @@ import kotlin.math.abs
  * Izvor: javni podaci Yahoo Financea (gotove liste, cijene s odgodom i povijest cijena); ne treba ključ.
  */
 
-enum class VrstaUlaganja(val naziv: String, val ikona: String, val opis: String) {
+enum class VrstaUlaganja(val naziv: String, val ikona: String, val opis: String, private val kratko: String? = null) {
     DIONICE("Dionice", "navTrend", "Pojedinačne tvrtke na burzama"),
     ETF("ETF-ovi", "navGrid", "Fondovi kojima se trguje kao dionicama"),
-    OBVEZNICE("Trezorski zapisi", "bank", "Prinosi državnih vrijednosnica i fondovi obveznica"),
+    // Nevidljivi razmak iza kose crte dopušta prijelom u dva retka na pločici.
+    OBVEZNICE("Trezorski zapisi/​obveznice", "bank", "Prinosi državnih vrijednosnica i fondovi obveznica", kratko = "Obveznice"),
     ROBA("Roba", "star", "Zlato, srebro, nafta, plin i druge sirovine"),
     KRIPTO("Kripto", "wallet", "Kriptovalute"),
+    ;
+
+    /** Kratki naziv za pločicu u Ulaganjima. */
+    val naslovPlocice: String get() = kratko ?: naziv
 }
 
 /** Konsenzus vanjskih analitičara: 1 = jaka kupnja … 5 = prodaja. */
@@ -365,6 +370,128 @@ object Trziste {
                 liste to miniGrafovi(liste.flatMap { l -> l.stavke.take(10).map { it.simbol } })
             }
         }
+    }
+
+    // --- Ulaganja korisnika: pretraga, cijene s ocjenom analitičara, dnevna povijest ---
+
+    /** Rezultat pretrage instrumenta (po nazivu, oznaci ili ISIN-u). */
+    data class Pronadeno(val simbol: String, val naziv: String, val vrsta: VrstaUlaganja, val burza: String?)
+
+    /** Vrsta s Yahoo Financea; kriptovalute i ostalo se ne nude (kripto je u novčanicima). */
+    fun vrstaIzTipa(tip: String): VrstaUlaganja? = when (tip.uppercase()) {
+        "EQUITY" -> VrstaUlaganja.DIONICE
+        "ETF", "MUTUALFUND" -> VrstaUlaganja.ETF
+        "FUTURE" -> VrstaUlaganja.ROBA
+        "INDEX", "BOND" -> VrstaUlaganja.OBVEZNICE
+        else -> null
+    }
+
+    fun parsirajPretragu(json: String): List<Pronadeno> {
+        val q = JSONObject(json).optJSONArray("quotes") ?: return emptyList()
+        return (0 until q.length()).mapNotNull { i ->
+            val o = q.getJSONObject(i)
+            val simbol = o.optString("symbol").ifBlank { return@mapNotNull null }
+            val vrsta = vrstaIzTipa(o.optString("quoteType")) ?: return@mapNotNull null
+            Pronadeno(
+                simbol,
+                o.optString("longname").ifBlank { o.optString("shortname") }.ifBlank { simbol },
+                vrsta,
+                o.optString("exchDisp").ifBlank { o.optString("exchange") }.ifBlank { null },
+            )
+        }
+    }
+
+    suspend fun pretrazi(upit: String): List<Pronadeno> = withContext(Dispatchers.IO) {
+        if (upit.isBlank()) return@withContext emptyList()
+        parsirajPretragu(dohvati("$API/v1/finance/search?q=${kod(upit.trim())}&quotesCount=10&newsCount=0&listsCount=0", 10 * 60_000))
+    }
+
+    // "Crumb" (oznaka sesije s kolačićem) treba za upit cijena s ocjenama analitičara; dohvaća se jednom.
+    @Volatile private var sesija: Pair<String, String>? = null
+
+    private fun novaSesija(): Pair<String, String> {
+        val c = URL("https://fc.yahoo.com").openConnection() as HttpURLConnection
+        c.instanceFollowRedirects = false
+        c.connectTimeout = 8_000
+        c.readTimeout = 8_000
+        c.setRequestProperty("User-Agent", AGENT)
+        val kolacic = try {
+            c.responseCode // odgovor je obično 404, bitan je samo kolačić
+            c.headerFields.entries.filter { it.key.equals("Set-Cookie", true) }.flatMap { it.value }
+                .joinToString("; ") { it.substringBefore(';') }
+        } finally {
+            c.disconnect()
+        }
+        val g = URL("$API/v1/test/getcrumb").openConnection() as HttpURLConnection
+        g.connectTimeout = 8_000
+        g.readTimeout = 8_000
+        g.setRequestProperty("User-Agent", AGENT)
+        g.setRequestProperty("Cookie", kolacic)
+        try {
+            if (g.responseCode !in 200..299) error("crumb HTTP ${g.responseCode}")
+            val crumb = g.inputStream.bufferedReader().use { it.readText() }.trim()
+            if (crumb.isEmpty() || crumb.contains('<')) error("crumb")
+            return (kolacic to crumb).also { sesija = it }
+        } finally {
+            g.disconnect()
+        }
+    }
+
+    /** Upit cijena (v7 quote) za zadane simbole: cijena, promjena, valuta i ocjena analitičara. */
+    private fun quote(simboli: List<String>): List<Kotacija> {
+        fun pokusaj(s: Pair<String, String>): Pair<Int, String> {
+            val c = URL("$API/v7/finance/quote?symbols=${kod(simboli.joinToString(","))}&crumb=${kod(s.second)}").openConnection() as HttpURLConnection
+            c.connectTimeout = 8_000
+            c.readTimeout = 12_000
+            c.setRequestProperty("User-Agent", AGENT)
+            c.setRequestProperty("Cookie", s.first)
+            try {
+                return c.responseCode to if (c.responseCode in 200..299) c.inputStream.bufferedReader().use { it.readText() } else ""
+            } finally {
+                c.disconnect()
+            }
+        }
+        var (status, tekst) = pokusaj(sesija ?: novaSesija())
+        if (status == 401 || status == 403) {
+            val r = pokusaj(novaSesija()); status = r.first; tekst = r.second
+        }
+        if (status !in 200..299) error("HTTP $status")
+        val niz = JSONObject(tekst).getJSONObject("quoteResponse").optJSONArray("result") ?: return emptyList()
+        // Isti oblik kao gotova lista: koristi se isto parsiranje.
+        return parsirajListu(JSONObject().put("finance", JSONObject().put("result", JSONArray().put(JSONObject().put("quotes", niz)))).toString(), VrstaUlaganja.DIONICE)
+    }
+
+    /**
+     * Trenutne cijene ulaganja korisnika s ocjenom analitičara gdje postoji. Ako upit s ocjenama ne uspije,
+     * cijene se dohvaćaju bez ocjena (isti izvor kao mini-grafovi).
+     */
+    suspend fun kotacijeUlaganja(simboli: List<String>): Map<String, Kotacija> = withContext(Dispatchers.IO) {
+        if (simboli.isEmpty()) return@withContext emptyMap()
+        val rez = runCatching { simboli.distinct().chunked(40).flatMap { quote(it) } }
+            .getOrElse { kotacije(simboli.associateWith { "" }, VrstaUlaganja.DIONICE).map { it.first } }
+        rez.associateBy { it.simbol }
+    }
+
+    fun parsirajDnevnuPovijest(json: String): List<Pair<java.time.LocalDate, Double>> {
+        val r = JSONObject(json).getJSONObject("chart").getJSONArray("result").getJSONObject(0)
+        val zona = runCatching { java.time.ZoneId.of(r.getJSONObject("meta").optString("exchangeTimezoneName")) }.getOrDefault(java.time.ZoneOffset.UTC)
+        val vremena = r.optJSONArray("timestamp") ?: return emptyList()
+        val z = r.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0)?.optJSONArray("close") ?: return emptyList()
+        return (0 until minOf(vremena.length(), z.length())).mapNotNull { i ->
+            if (z.isNull(i)) null else java.time.Instant.ofEpochSecond(vremena.getLong(i)).atZone(zona).toLocalDate() to z.getDouble(i)
+        }.groupBy { it.first }.map { (d, l) -> d to l.last().second }.sortedBy { it.first }
+    }
+
+    /** Dnevne cijene zatvaranja za zadnjih [dana] dana (u valuti kotacije). */
+    suspend fun dnevnaPovijest(simbol: String, dana: Int): List<Pair<java.time.LocalDate, Double>> = withContext(Dispatchers.IO) {
+        val raspon = when {
+            dana <= 31 -> "1mo"
+            dana <= 93 -> "3mo"
+            dana <= 186 -> "6mo"
+            dana <= 366 -> "1y"
+            else -> "5y"
+        }
+        parsirajDnevnuPovijest(dohvati("$API/v8/finance/chart/${kod(simbol)}?range=$raspon&interval=1d", 30 * 60_000))
     }
 
     /** Dionice s najboljim konsenzusom analitičara (do 2,0 = kupnja ili jaka kupnja), bez ponavljanja. */

@@ -32,6 +32,7 @@ fun ObavijestInfoDijalog(info: InfoObavijesti, stanjeCenti: Long, onAkcija: () -
         VrstaObavijesti.PROGNOZA -> "warn" to Neon.Jantar
         VrstaObavijesti.PODSJETNIK -> "bell" to Neon.Cijan
         VrstaObavijesti.TJEDNI -> "calendar" to Neon.Zelena
+        VrstaObavijesti.ROK -> "calendar" to Neon.Jantar
     }
     val objasnjenje = when (info.vrsta) {
         VrstaObavijesti.PONAVLJAJUCI ->
@@ -44,6 +45,9 @@ fun ObavijestInfoDijalog(info: InfoObavijesti, stanjeCenti: Long, onAkcija: () -
             "Uz dosadašnji dnevni tempo potrošnje u ovoj kategoriji limit će biti prekoračen prije kraja ciklusa. " +
                 "Prognoza = potrošeno ÷ proteklih dana × dana u ciklusu. Obavijest stiže jednom po kategoriji u ciklusu."
         VrstaObavijesti.TJEDNI -> "Tjedni pregled zadnjih 7 dana."
+        VrstaObavijesti.ROK ->
+            "Približava se rok ulaganja. U Štednji otvorite ulaganje: isplatite novac na račun ili ga reinvestirajte (npr. novi trezorski zapis)."
+
         VrstaObavijesti.PODSJETNIK ->
             "Dnevni podsjetnik stiže u odabrano vrijeme samo ako taj dan još niste ništa unijeli. " +
                 "Vrijeme mijenjate u Postavkama → Obavijesti."
@@ -54,6 +58,7 @@ fun ObavijestInfoDijalog(info: InfoObavijesti, stanjeCenti: Long, onAkcija: () -
         VrstaObavijesti.PROGNOZA -> "Otvori Budžete"
         VrstaObavijesti.PODSJETNIK -> "Dodaj unos"
         VrstaObavijesti.TJEDNI -> "Početna"
+        VrstaObavijesti.ROK -> "Otvori štednju"
     }
     AlertDialog(
         onDismissRequest = onZatvori,

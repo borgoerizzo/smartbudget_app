@@ -141,6 +141,8 @@ private sealed interface Sheet {
     /** Novčanik štednje u valuti; null id = novi. */
     data class NovcanikS(val id: Long?) : Sheet
     data object Kalkulator : Sheet
+    /** Ulaganje u vlasništvu (dionica, ETF, obveznica, roba); null = novo. */
+    data class PozicijaS(val id: Long?) : Sheet
 }
 
 @Composable
@@ -191,6 +193,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                     VrstaObavijesti.MINUS -> ekran = Ekran.POCETNA
                     VrstaObavijesti.PODSJETNIK -> { ekran = Ekran.POCETNA; sheet = Sheet.Transakcije(null) }
                     VrstaObavijesti.TJEDNI -> ekran = Ekran.POCETNA
+                    VrstaObavijesti.ROK -> ekran = Ekran.POCETNA
                 }
             },
             onZatvori = { Obavijesti.dodirnuta.value = null },
@@ -210,6 +213,16 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
     val novcanici by vm.novcanici.collectAsState()
     val tecajevi by vm.tecajevi.collectAsState()
     val kriptoPovijest by vm.kriptoPovijest.collectAsState()
+    val pozicije by vm.pozicije.collectAsState()
+    val cijeneUlaganja by vm.cijeneUlaganja.collectAsState()
+    val povijestUlaganja by vm.povijestUlaganja.collectAsState()
+    val vrijednostUlaganja = hr.smartbudget.app.ui.screens.vrijednostUlaganja(pozicije, cijeneUlaganja, tecajevi)
+    // Podsjetnici na rok ulaganja pri otvaranju aplikacije
+    LaunchedEffect(Unit) { vm.provjeriRokove() }
+    // Cijene ulaganja i tečaj za ukupnu štednju (jednom po pokretanju i kad se ulaganja promijene)
+    LaunchedEffect(pozicije.map { it.pozicija.simbol }.toSet()) {
+        if (pozicije.isNotEmpty()) { vm.osvjeziCijeneUlaganja(); if (tecajevi.hnb == null) vm.osvjeziTecajeve() }
+    }
     val zadnjiUnosi by vm.zadnjiUnosi.collectAsState()
     val godisnji by vm.godisnji.collectAsState()
     val naziviRacuna = racuni.map { it.naziv }
@@ -258,6 +271,16 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                                 { sheet = Sheet.NovcanikS(it.novcanik.id) }, { sheet = Sheet.Kalkulator },
                             )
                         },
+                        ulaganja = vrijednostUlaganja,
+                        brojUlaganja = pozicije.count { it.kolicinaMikro > 0 },
+                        ulaganjaKartica = {
+                            hr.smartbudget.app.ui.screens.UlaganjaStednjaKartica(
+                                pozicije, cijeneUlaganja, tecajevi,
+                                { vm.osvjeziCijeneUlaganja(); vm.osvjeziTecajeve() },
+                                { sheet = Sheet.PozicijaS(null) },
+                                { sheet = Sheet.PozicijaS(it.pozicija.id) },
+                            )
+                        },
                     )
                 },
             )
@@ -265,10 +288,19 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 analitika, vm::prethodniCiklus, vm::sljedeciCiklus, vm::trenutniCiklus, vm::postaviBrojCiklusa, godisnji, vm::postaviGodinu,
                 imaCiljeva = ciljevi.isNotEmpty(),
                 ciljevi = { StednjaZasticena { CiljeviAnalitikaKartica(ciljevi, uplate, tecajevi, vm::osvjeziTecajeve) } },
-                imaStednje = ciljevi.isNotEmpty() || novcanici.isNotEmpty(),
-                stednja = { StednjaZasticena { StednjaAnalitikaKartica(ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve) } },
+                imaStednje = ciljevi.isNotEmpty() || novcanici.isNotEmpty() || pozicije.isNotEmpty(),
+                stednja = { StednjaZasticena { StednjaAnalitikaKartica(ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve, vrijednostUlaganja) } },
                 imaKripta = novcanici.any { it.valuta.kripto },
                 kripto = { StednjaZasticena { KriptoAnalitikaKartica(novcanici, tecajevi, kriptoPovijest, vm::osvjeziTecajeve, vm::osvjeziKriptoPovijest) } },
+                imaUlaganja = pozicije.any { it.kolicinaMikro > 0 },
+                ulaganja = {
+                    StednjaZasticena {
+                        hr.smartbudget.app.ui.screens.UlaganjaAnalitikaKartica(
+                            pozicije, cijeneUlaganja, povijestUlaganja, tecajevi,
+                            vm::osvjeziCijeneUlaganja, vm::osvjeziTecajeve, vm::osvjeziPovijestUlaganja,
+                        )
+                    }
+                },
             ) }
             Ekran.BUDZETI -> hr.smartbudget.app.ui.ZasticeniZaslon(hr.smartbudget.app.ui.Dijelovi.CIKLUS, "Budžeti") { BudzetiEkran(
                 budzeti, ponavljajuci,
@@ -345,6 +377,12 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
         is Sheet.NovcanikS -> NovcanikSheet(
             novcanici.firstOrNull { it.novcanik.id == s.id }, tecajevi,
             vm::spremiNovcanik, vm::obrisiNovcanik, vm::dodajPromjenu, vm::obrisiPromjenu,
+            racuni = naziviRacuna, onIsplata = vm::isplataNovcanika,
+        ) { sheet = null }
+        is Sheet.PozicijaS -> hr.smartbudget.app.ui.screens.PozicijaSheet(
+            pozicije.firstOrNull { it.pozicija.id == s.id }, cijeneUlaganja, tecajevi,
+            vm::dodajPoziciju, vm::dodajPromjenuPozicije, vm::obrisiPromjenuPozicije, vm::obrisiPoziciju,
+            racuni = naziviRacuna, onSpremi = vm::spremiPoziciju, onProdaja = vm::prodajaPozicije,
         ) { sheet = null }
         Sheet.Kalkulator -> KalkulatorValutaSheet(novcanici, ciljevi, tecajevi, vm::osvjeziTecajeve, uplate) { sheet = null }
         is Sheet.UplataCilja -> UplataCiljaSheet(

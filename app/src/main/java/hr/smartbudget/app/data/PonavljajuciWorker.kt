@@ -37,6 +37,7 @@ class PonavljajuciWorker(context: Context, params: WorkerParameters) : Coroutine
         StanjeWidget.osvjezi(applicationContext)
         BackupManager.get(applicationContext).tjednaAkoTreba()
         runCatching { BudgetRepository.get(applicationContext).provjeriPrognoze() }
+        runCatching { BudgetRepository.get(applicationContext).provjeriRokove() }
         return Result.success()
     }
 
