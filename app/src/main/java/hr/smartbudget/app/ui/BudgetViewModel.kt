@@ -372,8 +372,18 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     fun dodajPromjenuPozicije(p: hr.smartbudget.app.data.PromjenaPozicije) = repo.opseg.launch { repo.dodajPromjenuPozicije(p) }
     fun obrisiPromjenuPozicije(p: hr.smartbudget.app.data.PromjenaPozicije) = repo.opseg.launch { repo.obrisiPromjenuPozicije(p) }
 
-    /** Podsjetnici na rok ulaganja (pri otvaranju aplikacije i nakon promjene roka). */
-    fun provjeriRokove() = repo.opseg.launch { runCatching { repo.provjeriRokove() } }
+    /** Podsjetnici na rok ulaganja i upis dospjelih dobiti (pri otvaranju aplikacije i nakon promjene roka). */
+    fun provjeriRokove() = repo.opseg.launch { runCatching { repo.provjeriRokove() }; runCatching { repo.upisiDospjeleDobiti() } }
+
+    /** Novi ili uređeni trezorski zapis / obveznica (s upisom dobiti prema izboru). */
+    fun spremiZapis(p: hr.smartbudget.app.data.Pozicija, ulozenoCenti: Long, kupljenoEpochDan: Long) = repo.opseg.launch {
+        repo.spremiZapis(p, ulozenoCenti, kupljenoEpochDan)
+        _poruke.tryEmit(if (p.id == 0L) "Zapis dodan: ${p.naziv}" else "Zapis spremljen")
+        runCatching { repo.provjeriRokove() }
+    }
+
+    fun azurirajPromjenuPozicije(p: hr.smartbudget.app.data.PromjenaPozicije) = repo.opseg.launch { repo.azurirajPromjenuPozicije(p); _poruke.tryEmit("Promjena spremljena") }
+    fun azurirajPromjenuNovcanika(p: hr.smartbudget.app.data.PromjenaNovcanika) = repo.opseg.launch { repo.azurirajPromjenuNovcanika(p); _poruke.tryEmit("Promjena spremljena") }
 
     /**
      * Prodaja ili isplata iz štednje: zapis promjene i, ako je odabran račun, priljev na taj račun kao prijenos

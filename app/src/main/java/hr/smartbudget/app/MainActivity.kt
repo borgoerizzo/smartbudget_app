@@ -263,12 +263,19 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                             CiljeviKartica(
                                 ciljevi, { sheet = Sheet.Cilj(null) }, { sheet = Sheet.Cilj(it) }, { c, u -> sheet = Sheet.UplataCilja(c, u) },
                                 uplate, tecajevi, vm::osvjeziTecajeve,
+                                onPodijeli = {
+                                    hr.smartbudget.app.ui.screens.podijeliTekst(kontekst, "Ciljevi štednje", hr.smartbudget.app.ui.screens.tekstCiljeva(ciljevi, uplate, tecajevi))
+                                },
                             )
                         },
                         novcaniciKartica = {
                             NovcaniciKartica(
                                 novcanici, tecajevi, vm::osvjeziTecajeve, { sheet = Sheet.NovcanikS(null) },
                                 { sheet = Sheet.NovcanikS(it.novcanik.id) }, { sheet = Sheet.Kalkulator },
+                                onPodijeli = { l ->
+                                    hr.smartbudget.app.ui.screens.podijeliTekst(kontekst, "Štednja u valutama", hr.smartbudget.app.ui.screens.tekstNovcanika(l, tecajevi))
+                                },
+                                onObrisi = { l -> l.forEach(vm::obrisiNovcanik) },
                             )
                         },
                         ulaganja = vrijednostUlaganja,
@@ -279,8 +286,14 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                                 { vm.osvjeziCijeneUlaganja(); vm.osvjeziTecajeve() },
                                 { sheet = Sheet.PozicijaS(null) },
                                 { sheet = Sheet.PozicijaS(it.pozicija.id) },
+                                onPodijeli = { l ->
+                                    hr.smartbudget.app.ui.screens.podijeliTekst(kontekst, "Moja ulaganja", hr.smartbudget.app.ui.screens.tekstUlaganja(l, cijeneUlaganja, tecajevi))
+                                },
+                                onObrisi = { l -> l.forEach(vm::obrisiPoziciju) },
                             )
                         },
+                        pozicije = pozicije,
+                        cijene = cijeneUlaganja,
                     )
                 },
             )
@@ -377,12 +390,18 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
         is Sheet.NovcanikS -> NovcanikSheet(
             novcanici.firstOrNull { it.novcanik.id == s.id }, tecajevi,
             vm::spremiNovcanik, vm::obrisiNovcanik, vm::dodajPromjenu, vm::obrisiPromjenu,
-            racuni = naziviRacuna, onIsplata = vm::isplataNovcanika,
+            racuni = naziviRacuna, onIsplata = vm::isplataNovcanika, onUrediPromjenu = vm::azurirajPromjenuNovcanika,
         ) { sheet = null }
         is Sheet.PozicijaS -> hr.smartbudget.app.ui.screens.PozicijaSheet(
             pozicije.firstOrNull { it.pozicija.id == s.id }, cijeneUlaganja, tecajevi,
             vm::dodajPoziciju, vm::dodajPromjenuPozicije, vm::obrisiPromjenuPozicije, vm::obrisiPoziciju,
             racuni = naziviRacuna, onSpremi = vm::spremiPoziciju, onProdaja = vm::prodajaPozicije,
+            // Kamo može ići dobit zapisa: računi, ciljevi štednje i novčanici u osnovnoj valuti
+            odredista = naziviRacuna.map { "r:$it" to it } +
+                ciljevi.map { "c:${it.id}" to "Cilj: ${it.naziv}" } +
+                novcanici.filter { it.valuta.kod == hr.smartbudget.app.domain.Novac.kodValute }.map { "n:${it.novcanik.id}" to "Novčanik: ${it.novcanik.naziv}" },
+            onSpremiZapis = vm::spremiZapis,
+            onUrediPromjenu = vm::azurirajPromjenuPozicije,
         ) { sheet = null }
         Sheet.Kalkulator -> KalkulatorValutaSheet(novcanici, ciljevi, tecajevi, vm::osvjeziTecajeve, uplate) { sheet = null }
         is Sheet.UplataCilja -> UplataCiljaSheet(

@@ -225,8 +225,8 @@ class BackupManager private constructor(private val context: Context) {
 
     companion object {
         const val ZADRZI = 10
-        /** 2: ručni rasponi ciklusa; 3: računi, ciljevi, prijenosi i podjele; 4: uplate na ciljeve; 5: novčanici u valutama; 6: prijenosi na štednju; 7: veza štednje na prijenos; 8: postavke aplikacije; 9: ulaganja; 10: ručno uneseni zapisi i obveznice (stariji formati se i dalje mogu vratiti). */
-        private const val VERZIJA_FORMATA = 10
+        /** 2: ručni rasponi ciklusa; 3: računi, ciljevi, prijenosi i podjele; 4: uplate na ciljeve; 5: novčanici u valutama; 6: prijenosi na štednju; 7: veza štednje na prijenos; 8: postavke aplikacije; 9: ulaganja; 10: ručno uneseni zapisi i obveznice; 11: upis dobiti zapisa (stariji formati se i dalje mogu vratiti). */
+        private const val VERZIJA_FORMATA = 11
 
         @Volatile private var instance: BackupManager? = null
         fun get(context: Context): BackupManager = instance ?: synchronized(this) {
@@ -286,6 +286,8 @@ class BackupManager private constructor(private val context: Context) {
             put("pozicije", JSONArray(k.pozicije.map {
                 JSONObject().apply { put("id", it.id); put("simbol", it.simbol); put("naziv", it.naziv); put("vrsta", it.vrsta); put("valuta", it.valuta); put("redoslijed", it.redoslijed)
                     put("nominalCenti", it.nominalCenti ?: JSONObject.NULL); put("dospijeceEpochDan", it.dospijeceEpochDan ?: JSONObject.NULL)
+                    put("dobitNa", it.dobitNa ?: JSONObject.NULL); put("dobitKada", it.dobitKada ?: JSONObject.NULL)
+                    put("dobitGrupaId", it.dobitGrupaId ?: JSONObject.NULL); put("dobitKnjizena", it.dobitKnjizena)
                 }
             }))
             put("promjenePozicija", JSONArray(k.promjenePozicija.map {
@@ -359,7 +361,10 @@ class BackupManager private constructor(private val context: Context) {
                 },
                 postavkeAplikacije = o.optJSONObject("postavkeAplikacije"),
                 pozicije = (o.optJSONArray("pozicije") ?: JSONArray()).mapiraj {
-                    Pozicija(it.getLong("id"), it.getString("simbol"), it.getString("naziv"), it.getString("vrsta"), it.getString("valuta"), it.optInt("redoslijed"), it.dugiIliNull("nominalCenti"), it.dugiIliNull("dospijeceEpochDan"))
+                    Pozicija(it.getLong("id"), it.getString("simbol"), it.getString("naziv"), it.getString("vrsta"), it.getString("valuta"), it.optInt("redoslijed"), it.dugiIliNull("nominalCenti"), it.dugiIliNull("dospijeceEpochDan"),
+                        if (it.isNull("dobitNa") || !it.has("dobitNa")) null else it.getString("dobitNa"),
+                        if (it.isNull("dobitKada") || !it.has("dobitKada")) null else it.getString("dobitKada"),
+                        it.dugiIliNull("dobitGrupaId"), it.optBoolean("dobitKnjizena", false))
                 },
                 promjenePozicija = (o.optJSONArray("promjenePozicija") ?: JSONArray()).mapiraj {
                     PromjenaPozicije(it.getLong("id"), it.getLong("pozicijaId"), it.getLong("kolicinaMikro"), it.getLong("epochDan"), it.dugiIliNull("ulozenoCenti"), it.optString("napomena"))

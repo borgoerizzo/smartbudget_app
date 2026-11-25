@@ -70,6 +70,12 @@ class RokoviTest {
         val s = Portfelj.stanja(listOf(zapis), listOf(PromjenaPozicije(pozicijaId = 7, kolicinaMikro = 1_000_000, epochDan = danas.toEpochDay(), ulozenoCenti = 990_000))).single()
         assertEquals(9_900.0, s.vrijednostRucno(danas.toEpochDay())!!, 1e-9)
         assertEquals(10_000.0, s.vrijednostRucno(danas.plusDays(100).toEpochDay())!!, 1e-9)
+        assertEquals(10_000L, s.dobitCenti)
+        // Dobit upisana na drugo mjesto (odmah ili na dospijeću): zapis vrijedi samo glavnicu, da se ne broji dvaput
+        val upisana = s.copy(pozicija = zapis.copy(dobitNa = "r:Tekući račun", dobitKada = Pozicija.DOBIT_ODMAH, dobitKnjizena = true))
+        assertEquals(9_900.0, upisana.vrijednostRucno(danas.plusDays(50).toEpochDay())!!, 1e-9)
+        assertEquals(9_900.0, upisana.vrijednostRucno(danas.plusDays(200).toEpochDay())!!, 1e-9)
+        assertEquals(0.0, upisana.vrijednostRucno(danas.minusDays(1).toEpochDay())!!, 1e-9)
         // Graf: ručni zapis ulazi i bez tržišnih cijena
         val v = Portfelj.vrijednostPoDanima(listOf(s), emptyMap(), { 1.0 }, danas, danas.plusDays(1))
         assertEquals(listOf(9_900.0, 9_901.0), v.map { it.second })

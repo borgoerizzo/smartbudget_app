@@ -101,6 +101,8 @@ fun CiljeviKartica(
     uplate: List<UplataCilja> = emptyList(),
     t: hr.smartbudget.app.ui.StanjeTecajeva = hr.smartbudget.app.ui.StanjeTecajeva(),
     onOsvjezi: () -> Unit = {},
+    /** Dijeljenje ciljeva kao teksta; null skriva gumb. */
+    onPodijeli: (() -> Unit)? = null,
 ) {
     // Uplate u stranim valutama vrednuju se po današnjem tečaju.
     val imaValuta = uplate.any { u -> u.valuta != null && ciljevi.any { it.id == u.ciljId } }
@@ -110,6 +112,10 @@ fun CiljeviKartica(
             Column(Modifier.weight(1f)) {
                 Text("Ciljevi štednje", style = Tip.naslovKartice)
                 Text("Npr. ljetovanje, novi mobitel, rezerva", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+            }
+            if (onPodijeli != null && ciljevi.isNotEmpty()) {
+                hr.smartbudget.app.ui.KruzniGumb("share", "Podijeli ciljeve", onPodijeli, velicina = 40.dp, boja = Neon.Cijan)
+                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
             }
             TonalniGumb("Novi", onNovi, ikona = "plus", boja = Neon.Zelena)
         }

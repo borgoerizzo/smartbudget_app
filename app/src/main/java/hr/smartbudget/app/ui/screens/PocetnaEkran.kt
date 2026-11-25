@@ -320,7 +320,7 @@ fun PocetnaEkran(
 }
 
 @Composable
-private fun TrakaOdabira(
+internal fun TrakaOdabira(
     broj: Int,
     sveOdabrano: Boolean,
     onSve: () -> Unit,
@@ -743,10 +743,12 @@ private fun GrupaDanaKartica(
  * povlačenja vraća na mjesto; brisanje se dogodi tek nakon potvrde.
  */
 @Composable
-private fun PrevlacivaStavka(
+internal fun PrevlacivaStavka(
     omoguceno: Boolean,
     onPodijeli: () -> Unit,
     onObrisi: () -> Unit,
+    /** U Štednji: povlačenje ulijevo briše, udesno dijeli (u Ciklusu je obrnuto). */
+    brisanjeUlijevo: Boolean = false,
     sadrzaj: @Composable () -> Unit,
 ) {
     val stanje = rememberSwipeToDismissBoxState()
@@ -757,28 +759,31 @@ private fun PrevlacivaStavka(
         // Poziva se tek kad je povlačenje završeno (ne usred povlačenja): radnja, pa kartica natrag na mjesto.
         onDismiss = { smjer ->
             when (smjer) {
-                SwipeToDismissBoxValue.EndToStart -> onPodijeli()
-                SwipeToDismissBoxValue.StartToEnd -> onObrisi()
+                SwipeToDismissBoxValue.EndToStart -> if (brisanjeUlijevo) onObrisi() else onPodijeli()
+                SwipeToDismissBoxValue.StartToEnd -> if (brisanjeUlijevo) onPodijeli() else onObrisi()
                 SwipeToDismissBoxValue.Settled -> Unit
             }
             opseg.launch { stanje.reset() }
         },
         backgroundContent = {
             val smjer = stanje.dismissDirection
-            val brisanje = smjer == SwipeToDismissBoxValue.StartToEnd
+            // Povlačenje udesno otkriva lijevu stranu, ulijevo desnu.
+            val udesno = smjer == SwipeToDismissBoxValue.StartToEnd
+            val brisanje = if (brisanjeUlijevo) smjer == SwipeToDismissBoxValue.EndToStart else udesno
             val boja = if (brisanje) Neon.Crvena else Neon.Cijan
+            val natpis = if (brisanje) "Obriši" else "Podijeli"
             Row(
                 Modifier
                     .fillMaxSize()
                     .background(if (smjer == SwipeToDismissBoxValue.Settled) Color.Transparent else boja.copy(alpha = .22f))
                     .padding(horizontal = 22.dp),
-                horizontalArrangement = if (brisanje) Arrangement.Start else Arrangement.End,
+                horizontalArrangement = if (udesno) Arrangement.Start else Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (smjer != SwipeToDismissBoxValue.Settled) {
-                    if (!brisanje) Text("Podijeli  ", color = boja, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    if (!udesno) Text("$natpis  ", color = boja, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     Icon(Ikone.ui(if (brisanje) "trash" else "share"), null, Modifier.size(22.dp), tint = boja)
-                    if (brisanje) Text("  Obriši", color = boja, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    if (udesno) Text("  $natpis", color = boja, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         },

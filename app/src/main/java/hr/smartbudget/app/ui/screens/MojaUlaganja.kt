@@ -159,23 +159,45 @@ fun UlaganjaStednjaKartica(
     onOsvjezi: () -> Unit,
     onNovo: () -> Unit,
     onOtvori: (StanjePozicije) -> Unit,
+    /** Dijeljenje odabranih (ili svih) ulaganja kao teksta. */
+    onPodijeli: (List<StanjePozicije>) -> Unit = {},
+    /** Brisanje ulaganja (nakon potvrde). */
+    onObrisi: (List<Pozicija>) -> Unit = {},
 ) {
     LaunchedEffect(pozicije.map { it.pozicija.simbol }.toSet()) { if (pozicije.isNotEmpty()) onOsvjezi() }
     val osnovna = osnovnaValuta()
     val sve = pozicije
     // Prodana i isplaćena ulaganja (količina 0) ne prikazuju se.
     @Suppress("NAME_SHADOWING") val pozicije = sve.filter { it.kolicinaMikro > 0 }
+    // Višestruki odabir (dugi pritisak): id-jevi odabranih ulaganja
+    var odabrani by remember { mutableStateOf(setOf<Long>()) }
+    val odabraneStavke = pozicije.filter { it.pozicija.id in odabrani }
+    val uOdabiru = odabraneStavke.isNotEmpty()
+    var zaBrisanje by remember { mutableStateOf<List<StanjePozicije>?>(null) }
+    androidx.activity.compose.BackHandler(uOdabiru) { odabrani = emptySet() }
+    fun prebaci(id: Long) { odabrani = if (id in odabrani) odabrani - id else odabrani + id }
+    zaBrisanje?.let { l ->
+        PotvrdaBrisanja(
+            if (l.size == 1) "Obrisati ulaganje?" else "Obrisati ${l.size} ulaganja?",
+            l.joinToString(", ") { it.pozicija.naziv } + " i sve kupnje i prodaje bit će obrisane.",
+            { zaBrisanje = null },
+        ) { onObrisi(l.map { it.pozicija }); odabrani = emptySet(); zaBrisanje = null }
+    }
     Kartica(razmak = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Moja ulaganja", style = Tip.naslovKartice)
                 Text("Dionice, ETF-ovi, obveznice i roba", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
             }
+            if (pozicije.isNotEmpty()) {
+                KruzniGumb("share", "Podijeli ulaganja", { onPodijeli(pozicije) }, velicina = 40.dp, boja = Neon.Cijan)
+                Spacer(Modifier.width(8.dp))
+            }
             if (pozicije.any { !it.pozicija.rucno }) {
                 KruzniGumb("osvjezi", "Osvježi cijene", onOsvjezi, velicina = 40.dp, boja = Neon.Cijan)
                 Spacer(Modifier.width(8.dp))
             }
-            TonalniGumb("Dodaj", onNovo, ikona = "plus", boja = Neon.Zelena)
+            KruzniGumb("plus", "Dodaj ulaganje", onNovo, velicina = 40.dp, boja = Neon.Zelena)
         }
         val zatvorene = sve.filter { it.kolicinaMikro <= 0 }
         if (pozicije.isEmpty()) {
@@ -187,6 +209,15 @@ fun UlaganjaStednjaKartica(
             ZatvorenaUlaganja(zatvorene, onOtvori)
             return@Kartica
         }
+        if (uOdabiru) {
+            TrakaOdabira(
+                odabraneStavke.size, odabraneStavke.size == pozicije.size,
+                { odabrani = if (odabraneStavke.size == pozicije.size) emptySet() else pozicije.map { it.pozicija.id }.toSet() },
+                { onPodijeli(odabraneStavke) }, { zaBrisanje = odabraneStavke }, { odabrani = emptySet() }, Modifier,
+            )
+        } else {
+            Text("Povuci ulijevo za brisanje, udesno za dijeljenje · dugi pritisak za odabir više", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp))
+        }
         var ukupno = 0.0
         var potpuno = true
         pozicije.forEachIndexed { i, s ->
@@ -194,9 +225,13 @@ fun UlaganjaStednjaKartica(
             val k = c.kotacije[s.pozicija.simbol]
             val v = vrijednostPozicije(s, k, t)
             if (v != null) ukupno += v else if (s.kolicinaMikro != 0L) potpuno = false
-            Row(
-                Modifier.fillMaxWidth().clickable(onClickLabel = "Otvori ulaganje") { onOtvori(s) }.padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            androidx.compose.runtime.key(s.pozicija.id) {
+            PrevlacivaStavka(
+                omoguceno = !uOdabiru, onPodijeli = { onPodijeli(listOf(s)) }, onObrisi = { zaBrisanje = listOf(s) }, brisanjeUlijevo = true,
+            ) {
+            RedSOdabirom(
+                if (uOdabiru) s.pozicija.id in odabrani else null, "Otvori ulaganje",
+                onClick = { if (uOdabiru) prebaci(s.pozicija.id) else onOtvori(s) }, onDugi = { prebaci(s.pozicija.id) },
             ) {
                 AvatarSimbola(s.pozicija.simbol, 38.dp)
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -212,6 +247,8 @@ fun UlaganjaStednjaKartica(
                     Text(v?.let { Valute.iznos(it, osnovna) } ?: "—", style = Tip.iznos.copy(fontSize = 15.sp), color = Neon.Tekst, maxLines = 1, softWrap = false, modifier = Modifier.skrivaStednju())
                     k?.let { PromjenaDana(it.promjenaPosto) }
                 }
+            }
+            }
             }
         }
         HorizontalDivider(color = Neon.RubSlab)
@@ -281,6 +318,12 @@ fun PozicijaSheet(
     onSpremi: (Pozicija) -> Unit = {},
     /** Prodaja ili isplata: promjena, račun (null = ne na račun), iznos u centima i opis prijenosa. */
     onProdaja: (PromjenaPozicije, String?, Long?, String) -> Unit = { pr, _, _, _ -> onPromjena(pr) },
+    /** Mjesta na koja može ići dobit zapisa: (ključ, naziv), npr. ("r:Tekući račun", "Tekući račun"). */
+    odredista: List<Pair<String, String>> = emptyList(),
+    /** Novi ili uređeni ručni zapis s upisom dobiti; null = stari način (bez upisa dobiti). */
+    onSpremiZapis: ((Pozicija, Long, Long) -> Unit)? = null,
+    /** Uređivanje kupnje ili prodaje. */
+    onUrediPromjenu: (PromjenaPozicije) -> Unit = {},
     onZatvori: () -> Unit,
 ) {
     val osnovna = osnovnaValuta()
@@ -311,6 +354,13 @@ fun PozicijaSheet(
     var iznosIsplate by remember { mutableStateOf("") }
     var isplata by remember { mutableStateOf(false) }
     var reinvest by remember { mutableStateOf(false) }
+    var urediZapis by remember { mutableStateOf(false) }
+    // Dobit zapisa: kada (odmah, pri dospijeću; null = samo prikaz) i kamo
+    var dobitKada by remember { mutableStateOf<String?>(Pozicija.DOBIT_DOSPIJECE) }
+    var dobitNa by remember {
+        mutableStateOf(odredista.firstOrNull { it.first == "r:" + hr.smartbudget.app.data.NacinPlacanja.TEKUCI }?.first ?: odredista.firstOrNull()?.first)
+    }
+    var uredujemPromjenu by remember { mutableStateOf<PromjenaPozicije?>(null) }
 
     /** Sprema ručni zapis; kod reinvestiranja zatvara stari (bez priljeva na račun). */
     fun spremiRucni(zatvori: StanjePozicije?) {
@@ -323,15 +373,17 @@ fun PozicijaSheet(
             nom == null || nom <= 0 -> greska = "Unesite iznos koji dobivate pri dospijeću."
             d == null -> greska = "Odaberite datum dospijeća."
             !d.isAfter(kupljeno) -> greska = "Dospijeće mora biti nakon datuma kupnje."
+            dobitKada != null && dobitNa == null && nom > ul -> greska = "Odaberite kamo ide dobit (ili \"Samo prikaži\")."
             else -> {
                 val o = oznaka.trim()
-                onDodaj(
-                    Pozicija(
-                        simbol = o, naziv = nazivRucno.trim().ifBlank { nazivZaOznaku(o) }, vrsta = VrstaUlaganja.OBVEZNICE.name,
-                        valuta = osnovna.kod, nominalCenti = nom, dospijeceEpochDan = d.toEpochDay(),
-                    ),
-                    PromjenaPozicije(pozicijaId = 0, kolicinaMikro = 1_000_000, epochDan = kupljeno.toEpochDay(), ulozenoCenti = ul),
+                val baza = if (urediZapis && s != null) s.pozicija
+                else Pozicija(simbol = o, naziv = "", vrsta = VrstaUlaganja.OBVEZNICE.name, valuta = osnovna.kod)
+                val nova = baza.copy(
+                    simbol = o, naziv = nazivRucno.trim().ifBlank { nazivZaOznaku(o) }, nominalCenti = nom, dospijeceEpochDan = d.toEpochDay(),
+                    dobitKada = dobitKada, dobitNa = if (dobitKada == null) null else dobitNa,
                 )
+                if (onSpremiZapis != null) onSpremiZapis(nova, ul, kupljeno.toEpochDay())
+                else onDodaj(nova, PromjenaPozicije(pozicijaId = 0, kolicinaMikro = 1_000_000, epochDan = kupljeno.toEpochDay(), ulozenoCenti = ul))
                 zatvori?.let {
                     onProdaja(
                         PromjenaPozicije(pozicijaId = it.pozicija.id, kolicinaMikro = -it.kolicinaMikro, epochDan = LocalDate.now().toEpochDay(), napomena = "reinvestirano u $o"),
@@ -360,18 +412,22 @@ fun PozicijaSheet(
         ZaglavljeSheeta(
             when {
                 reinvest -> "Reinvestiraj"
+                urediZapis -> "Uredi zapis"
                 s == null -> if (rucniUnos) "Državni zapis / obveznica" else "Novo ulaganje"
                 else -> s.pozicija.naziv
             },
             onZatvori,
         )
-        if ((s == null && rucniUnos) || (s != null && reinvest)) {
+        if ((s == null && rucniUnos) || (s != null && (reinvest || urediZapis))) {
             if (reinvest) Text("Novi zapis kupljen iznosom dospjelog; stari se zatvara bez priljeva na račun.", color = Neon.Cijan, fontSize = 13.sp, lineHeight = 18.sp)
             RucniUnosForma(
                 oznaka, { oznaka = it.uppercase() },
                 nazivRucno, { nazivRucno = it }, ulozenoRucno, { ulozenoRucno = it; greska = null }, nominalRucno, { nominalRucno = it; greska = null },
                 kupljeno, dospijece, { biramDatum = 1 }, { biramDatum = 2 }, greska,
-                onNatrag = { rucniUnos = false; reinvest = false; greska = null },
+                onNatrag = { rucniUnos = false; reinvest = false; urediZapis = false; greska = null },
+                dobitKada = dobitKada, onDobitKada = { dobitKada = it; greska = null },
+                dobitNa = dobitNa, onDobitNa = { dobitNa = it; greska = null }, odredista = odredista,
+                natpisSpremi = if (urediZapis) "Spremi zapis" else "Dodaj zapis",
             ) { spremiRucni(if (reinvest) s else null) }
         } else if (s == null) {
             val o = odabrano
@@ -440,13 +496,28 @@ fun PozicijaSheet(
                 kotOdabranog?.ocjena?.let { OznakaOcjene(it) }
             }
         } else if (s.pozicija.rucno) {
-            KarticaRucnog(s)
+            KarticaRucnog(s, odredista)
+            if (onSpremiZapis != null) TonalniGumb("Uredi zapis", {
+                urediZapis = true; isplata = false; greska = null
+                oznaka = s.pozicija.simbol; nazivRucno = s.pozicija.naziv
+                ulozenoRucno = s.ulozeno?.let { Novac.broj(it) } ?: ""
+                nominalRucno = s.pozicija.nominalCenti?.let { Novac.broj(it) } ?: ""
+                kupljeno = s.kupljenoEpochDan?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now()
+                dospijece = s.pozicija.dospijeceEpochDan?.let { LocalDate.ofEpochDay(it) }
+                dobitKada = if (s.pozicija.dobitNa == null) null else (s.pozicija.dobitKada ?: Pozicija.DOBIT_DOSPIJECE)
+                dobitNa = s.pozicija.dobitNa ?: dobitNa
+            }, Modifier.fillMaxWidth(), ikona = "edit", boja = Neon.LjubicastaSvijetla)
             if (s.kolicinaMikro <= 0) {
                 Text("Zapis je isplaćen ili reinvestiran.", style = Tip.malo)
             } else {
                 val danas = LocalDate.now()
                 val dospjelo = s.pozicija.dospijeceEpochDan?.let { !LocalDate.ofEpochDay(it).isAfter(danas) } == true
-                val predlozeno = if (dospjelo) s.pozicija.nominalCenti ?: 0 else kotlin.math.round((s.vrijednostRucno(danas.toEpochDay()) ?: 0.0) * 100).toLong()
+                // Ako je dobit već upisana (odmah ili na dan dospijeća), isplaćuje se samo glavnica.
+                val predlozeno = when {
+                    s.pozicija.dobitKnjizena -> s.ulozeno ?: 0
+                    dospjelo -> s.pozicija.nominalCenti ?: 0
+                    else -> kotlin.math.round((s.vrijednostRucno(danas.toEpochDay()) ?: 0.0) * 100).toLong()
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TonalniGumb("Isplati", {
                         isplata = !isplata; iznosIsplate = Novac.broj(predlozeno); greska = null
@@ -602,11 +673,11 @@ fun PozicijaSheet(
         if (s != null) {
             if (s.promjene.isNotEmpty() && !s.pozicija.rucno) {
                 Column {
-                    OznakaPolja("Povijest · dodirnite za brisanje")
+                    OznakaPolja("Povijest · dodirnite za uređivanje")
                     s.promjene.take(15).forEachIndexed { i, p ->
                         if (i > 0) HorizontalDivider(color = Neon.RubSlab)
                         Row(
-                            Modifier.fillMaxWidth().clickable(onClickLabel = "Obriši promjenu") { brisemPromjenu = p }.padding(vertical = 9.dp),
+                            Modifier.fillMaxWidth().clickable(onClickLabel = "Uredi promjenu") { uredujemPromjenu = p }.padding(vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
@@ -643,6 +714,12 @@ fun PozicijaSheet(
         PotvrdaBrisanja("Obrisati ulaganje?", "\"${s.pozicija.naziv}\" i sve njegove kupnje i prodaje bit će obrisane.", { potvrda = false }) {
             onObrisi(s.pozicija); potvrda = false; onZatvori()
         }
+    }
+    uredujemPromjenu?.let { p ->
+        UrediPromjenuDijalog(
+            p, onSpremi = { onUrediPromjenu(it); uredujemPromjenu = null },
+            onObrisi = { brisemPromjenu = p; uredujemPromjenu = null },
+        ) { uredujemPromjenu = null }
     }
     brisemPromjenu?.let { p ->
         PotvrdaBrisanja("Obrisati promjenu?", "${HrDatum.puni(LocalDate.ofEpochDay(p.epochDan))} · ${Portfelj.kolicina(abs(p.kolicinaMikro))} kom.", { brisemPromjenu = null }) {
@@ -817,7 +894,7 @@ fun UlaganjaAnalitikaKartica(
 
 /** Prikaz ručno unesenog zapisa ili obveznice: vrijednost danas, uloženo, iznos i datum dospijeća, prinos i protek vremena. */
 @Composable
-private fun KarticaRucnog(s: StanjePozicije) {
+private fun KarticaRucnog(s: StanjePozicije, odredista: List<Pair<String, String>> = emptyList()) {
     val v = Valute.po(s.pozicija.valuta)
     val danas = LocalDate.now()
     val dosp = LocalDate.ofEpochDay(s.pozicija.dospijeceEpochDan!!)
@@ -837,7 +914,10 @@ private fun KarticaRucnog(s: StanjePozicije) {
             Text("${s.pozicija.simbol} · ručni unos", style = Tip.oznaka, modifier = Modifier.weight(1f))
         }
         Text(Valute.iznos(sada, v), fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Neon.Tekst, maxLines = 1)
-        Text("Vrijednost danas (uloženo + obračunati prinos)", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+        Text(
+            if (s.pozicija.dobitKnjizena) "Vrijednost danas (glavnica; dobit je upisana zasebno)" else "Vrijednost danas (uloženo + obračunati prinos)",
+            style = Tip.oznaka.copy(fontWeight = FontWeight.Normal),
+        )
         TrakaNapretka(
             (proslo.toFloat() / ukupnoDana).coerceIn(0f, 1f), Brush.horizontalGradient(listOf(Neon.LjubicastaSvijetla, Neon.Zelena)), Neon.LjubicastaSvijetla, visina = 6.dp,
         )
@@ -853,6 +933,17 @@ private fun KarticaRucnog(s: StanjePozicije) {
             PlocicaVrijednosti("Pri dospijeću", Valute.iznos(nominal, v), Neon.Zelena, Modifier.weight(1f))
             PlocicaVrijednosti("Prinos god.", s.prinosGodisnji?.let { FormatTrzista.broj(it, 2) + " %" } ?: "—", Neon.Zelena, Modifier.weight(1f))
         }
+        s.dobitCenti?.takeIf { it > 0 }?.let { d ->
+            val kamo = s.pozicija.dobitNa?.let { k -> odredista.firstOrNull { it.first == k }?.second ?: k.substringAfter(':') }
+            Text(
+                "Dobit ${Valute.iznos(d, v)}: " + when {
+                    kamo == null -> "samo se prikazuje (nije odabrano kamo ide)"
+                    s.pozicija.dobitKnjizena -> "upisana na \"$kamo\"" + if (s.pozicija.dobitKada == Pozicija.DOBIT_ODMAH) " pri kupnji" else " na dan dospijeća"
+                    else -> "bit će upisana na \"$kamo\" na dan dospijeća"
+                },
+                color = Neon.Zelena, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 
@@ -866,6 +957,10 @@ private fun RucniUnosForma(
     onBirajKupnju: () -> Unit, onBirajDospijece: () -> Unit,
     greska: String?,
     onNatrag: () -> Unit,
+    dobitKada: String? = null, onDobitKada: (String?) -> Unit = {},
+    dobitNa: String? = null, onDobitNa: (String?) -> Unit = {},
+    odredista: List<Pair<String, String>> = emptyList(),
+    natpisSpremi: String = "Dodaj zapis",
     onSpremi: () -> Unit,
 ) {
     val osnovna = osnovnaValuta()
@@ -889,10 +984,9 @@ private fun RucniUnosForma(
         OznakaPolja("Iznos pri dospijeću (${osnovna.kod}, nominala)")
         NeonPolje(nominal, onNominal, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true)
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        GumbPolja("calendar", "Kupljeno ${HrDatum.puni(kupljeno)}", Modifier.weight(1f), onBirajKupnju)
-        GumbPolja("calendar", dospijece?.let { "Dospijeće ${HrDatum.puni(it)}" } ?: "Dospijeće?", Modifier.weight(1f), onBirajDospijece)
-    }
+    // Datumi jedan ispod drugog, da se ne skraćuju
+    GumbPolja("calendar", "Kupljeno ${HrDatum.puni(kupljeno)}", Modifier.fillMaxWidth(), onBirajKupnju)
+    GumbPolja("calendar", dospijece?.let { "Dospijeće ${HrDatum.puni(it)}" } ?: "Odaberite datum dospijeća", Modifier.fillMaxWidth(), onBirajDospijece)
     // Pregled prinosa
     val ul = Novac.parsiraj(ulozeno)
     val nom = Novac.parsiraj(nominal)
@@ -905,8 +999,12 @@ private fun RucniUnosForma(
             )
         }
     }
+    // Dobit (iznos pri dospijeću − uloženo): kada i kamo je upisati
+    if (ul != null && nom != null && nom > ul && odredista.isNotEmpty()) {
+        DobitZapisa(nom - ul, dobitKada, onDobitKada, dobitNa, onDobitNa, odredista)
+    }
     greska?.let { Text(it, color = Neon.Crvena, fontSize = 12.sp) }
-    PrimarniGumb("Dodaj zapis", onClick = onSpremi, ikona = "check")
+    PrimarniGumb(natpisSpremi, onClick = onSpremi, ikona = "check")
     Text(
         "← Natrag na pretragu", color = Neon.Cijan, fontSize = 13.sp, fontWeight = FontWeight.Bold,
         modifier = Modifier.clickable(onClick = onNatrag).padding(vertical = 6.dp),
@@ -933,4 +1031,90 @@ internal fun OdredisteNovca(racuni: List<String>, odabran: String?, onOdabir: (S
             style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp, lineHeight = 15.sp),
         )
     }
+}
+
+
+/** Izbor kada (odmah, pri dospijeću ili samo prikaz) i kamo (račun, cilj, novčanik) ide dobit zapisa. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun DobitZapisa(
+    dobitCenti: Long,
+    kada: String?, onKada: (String?) -> Unit,
+    na: String?, onNa: (String?) -> Unit,
+    odredista: List<Pair<String, String>>,
+) {
+    val osnovna = osnovnaValuta()
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Neon.Zelena.copy(alpha = .06f))
+            .border(1.dp, Neon.Zelena.copy(alpha = .22f), RoundedCornerShape(18.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Dobit ${Valute.iznos(dobitCenti, osnovna)}", color = Neon.Zelena, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        val opcije = listOf(Pozicija.DOBIT_DOSPIJECE, Pozicija.DOBIT_ODMAH, null)
+        Segmenti(listOf("Pri dospijeću", "Odmah", "Samo prikaži"), opcije.indexOf(kada).coerceAtLeast(0), { onKada(opcije[it]) }, boje = List(3) { Neon.Zelena })
+        if (kada != null) {
+            OznakaPolja("Kamo ide dobit")
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                odredista.forEach { (k, n) -> hr.smartbudget.app.ui.NeonChip(n, k == na, { onNa(k) }, boja = Neon.Zelena) }
+            }
+        }
+        Text(
+            when (kada) {
+                Pozicija.DOBIT_ODMAH -> "Dobit se odmah upisuje kao prihod (\"Prinos od ulaganja\") ili uplata na odabrano mjesto. Zapis do dospijeća vrijedi uloženo, a pri isplati se vraća glavnica."
+                Pozicija.DOBIT_DOSPIJECE -> "Do dospijeća se dobit postupno obračunava u vrijednosti zapisa. Na dan dospijeća upisuje se na odabrano mjesto, a pri isplati se vraća glavnica."
+                else -> "Dobit se samo prikazuje u vrijednosti zapisa; pri isplati unosite cijeli iznos."
+            },
+            style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp, lineHeight = 15.sp),
+        )
+    }
+}
+
+/** Uređivanje kupnje ili prodaje ulaganja: količina, plaćeni iznos, datum i napomena. */
+@Composable
+private fun UrediPromjenuDijalog(p: PromjenaPozicije, onSpremi: (PromjenaPozicije) -> Unit, onObrisi: () -> Unit, onZatvori: () -> Unit) {
+    val osnovna = osnovnaValuta()
+    val kupnja = p.kolicinaMikro >= 0
+    var kolicina by remember { mutableStateOf(Portfelj.kolicina(abs(p.kolicinaMikro)).replace(".", "")) }
+    var placeno by remember { mutableStateOf(p.ulozenoCenti?.let { Novac.broj(it) } ?: "") }
+    var napomena by remember { mutableStateOf(p.napomena) }
+    var datum by remember { mutableStateOf(LocalDate.ofEpochDay(p.epochDan)) }
+    var biram by remember { mutableStateOf(false) }
+    var greska by remember { mutableStateOf<String?>(null) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onZatvori,
+        containerColor = Neon.Sheet,
+        title = { Text(if (kupnja) "Uredi kupnju" else "Uredi prodaju", color = Neon.Tekst) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OznakaPolja("Količina")
+                NeonPolje(kolicina, { kolicina = it; greska = null }, Modifier.fillMaxWidth(), placeholder = "npr. 10 ili 0,5", tipkovnica = KeyboardType.Decimal)
+                if (kupnja) {
+                    OznakaPolja("Plaćeno ukupno (${osnovna.kod}, za izračun dobiti)")
+                    NeonPolje(placeno, { placeno = it }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true)
+                }
+                GumbPolja("calendar", "Datum ${HrDatum.puni(datum)}", Modifier.fillMaxWidth()) { biram = true }
+                NeonPolje(napomena, { napomena = it }, Modifier.fillMaxWidth(), placeholder = "Napomena (opcionalno)")
+                greska?.let { Text(it, color = Neon.Crvena, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton({
+                val k = Portfelj.parsirajKolicinu(kolicina)
+                if (k == null || k <= 0) greska = "Unesite količinu (najviše 6 decimala)."
+                else onSpremi(
+                    p.copy(
+                        kolicinaMikro = if (kupnja) k else -k, epochDan = datum.toEpochDay(), napomena = napomena.trim(),
+                        ulozenoCenti = if (kupnja) Novac.parsiraj(placeno)?.takeIf { it > 0 } else p.ulozenoCenti,
+                    ),
+                )
+            }) { Text("Spremi", color = Neon.Zelena, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            Row {
+                androidx.compose.material3.TextButton(onObrisi) { Text("Obriši", color = Neon.Crvena) }
+                androidx.compose.material3.TextButton(onZatvori) { Text("Odustani", color = Neon.TekstSiv) }
+            }
+        },
+    )
+    if (biram) BiracDatumaDijalog(datum, { datum = it }) { biram = false }
 }

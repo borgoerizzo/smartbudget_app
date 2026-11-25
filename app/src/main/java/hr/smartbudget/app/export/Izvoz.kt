@@ -132,6 +132,82 @@ object Izvoz {
         zip.flush()
     }
 
+    /** Ćelija opće tablice: tekst ili broj (broj s 2 decimale, u Excelu kao broj). */
+    sealed interface Celija {
+        data class Tekst(val v: String) : Celija
+        data class Broj(val v: Double?) : Celija
+    }
+
+    /**
+     * Opća tablica (npr. izvoz štednje) u CSV ili .xlsx: prvi redak je zaglavlje, [sirine] su širine stupaca u Excelu.
+     */
+    fun tablica(format: FormatIzvoza, naziv: String, zaglavlje: List<String>, redovi: List<List<Celija>>, sirine: List<Int>, out: OutputStream) {
+        when (format) {
+            FormatIzvoza.CSV -> {
+                val sb = StringBuilder()
+                fun redak(polja: List<String>) {
+                    sb.append(polja.joinToString(";") { p ->
+                        if (p.any { it == ';' || it == '"' || it == '\n' || it == '\r' }) "\"" + p.replace("\"", "\"\"") + "\"" else p
+                    }).append("\r\n")
+                }
+                redak(zaglavlje)
+                redovi.forEach { r ->
+                    redak(r.map { c ->
+                        when (c) {
+                            is Celija.Tekst -> c.v
+                            is Celija.Broj -> c.v?.let { BigDecimal.valueOf(it).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString().replace('.', ',') } ?: ""
+                        }
+                    })
+                }
+                out.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
+                out.write(sb.toString().toByteArray(Charsets.UTF_8))
+                out.flush()
+            }
+            FormatIzvoza.XLSX -> {
+                val zip = ZipOutputStream(out)
+                fun dat(ime: String, sadrzaj: String) {
+                    zip.putNextEntry(ZipEntry(ime)); zip.write(sadrzaj.toByteArray(Charsets.UTF_8)); zip.closeEntry()
+                }
+                dat("[Content_Types].xml", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>""")
+                dat("_rels/.rels", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""")
+                dat("xl/workbook.xml", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xml(naziv.take(31))}" sheetId="1" r:id="rId1"/></sheets></workbook>""")
+                dat("xl/_rels/workbook.xml.rels", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>""")
+                // Stilovi: 0 = obično, 1 = podebljano zaglavlje, 2 = broj s 2 decimale.
+                dat("xl/styles.xml", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>""")
+                fun stupac(i: Int): String = if (i < 26) ('A' + i).toString() else ('A' + i / 26 - 1).toString() + ('A' + i % 26)
+                fun tekst(ref: String, v: String, stil: Int = 0) =
+                    """<c r="$ref" t="inlineStr"${if (stil > 0) " s=\"$stil\"" else ""}><is><t xml:space="preserve">${xml(v)}</t></is></c>"""
+                val sheet = StringBuilder()
+                sheet.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">""")
+                sheet.append("""<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>""")
+                sirine.forEachIndexed { i, w -> sheet.append("""<col min="${i + 1}" max="${i + 1}" width="$w" customWidth="1"/>""") }
+                sheet.append("</cols><sheetData><row r=\"1\">")
+                zaglavlje.forEachIndexed { i, h -> sheet.append(tekst("${stupac(i)}1", h, 1)) }
+                sheet.append("</row>")
+                redovi.forEachIndexed { idx, red ->
+                    val r = idx + 2
+                    sheet.append("""<row r="$r">""")
+                    red.forEachIndexed { i, c ->
+                        when (c) {
+                            is Celija.Tekst -> if (c.v.isNotEmpty()) sheet.append(tekst("${stupac(i)}$r", c.v))
+                            is Celija.Broj -> c.v?.let { sheet.append("""<c r="${stupac(i)}$r" s="2"><v>${BigDecimal.valueOf(it).setScale(6, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString()}</v></c>""") }
+                        }
+                    }
+                    sheet.append("</row>")
+                }
+                sheet.append("</sheetData></worksheet>")
+                dat("xl/worksheets/sheet1.xml", sheet.toString())
+                zip.finish()
+                zip.flush()
+            }
+        }
+    }
+
     private fun xml(s: String) = buildString {
         s.forEach { ch ->
             when {

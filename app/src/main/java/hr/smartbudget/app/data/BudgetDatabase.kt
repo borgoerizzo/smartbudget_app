@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PrilagodbaCiklusa::class, Racun::class, CiljStednje::class, UplataCilja::class, Novcanik::class, PromjenaNovcanika::class,
         Pozicija::class, PromjenaPozicije::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
@@ -48,7 +48,7 @@ abstract class BudgetDatabase : RoomDatabase() {
         fun get(context: Context): BudgetDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, BudgetDatabase::class.java, "smartbudget.db")
                 .addCallback(Pocetni)
-                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7, MIGRACIJA_7_8, MIGRACIJA_8_9, MIGRACIJA_9_10, MIGRACIJA_10_11)
+                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7, MIGRACIJA_7_8, MIGRACIJA_8_9, MIGRACIJA_9_10, MIGRACIJA_10_11, MIGRACIJA_11_12)
                 .build()
                 .also { instance = it }
         }
@@ -191,6 +191,16 @@ abstract class BudgetDatabase : RoomDatabase() {
             db.execSQL("ALTER TABLE `pozicije` ADD COLUMN `nominalCenti` INTEGER")
             db.execSQL("ALTER TABLE `pozicije` ADD COLUMN `dospijeceEpochDan` INTEGER")
             db.execSQL("ALTER TABLE `novcanici` ADD COLUMN `rokEpochDan` INTEGER")
+        }
+    }
+
+    /** v12: kamo i kada ide dobit ručnog zapisa (odmah ili pri dospijeću) i veza na upisanu dobit. */
+    private object MIGRACIJA_11_12 : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `pozicije` ADD COLUMN `dobitNa` TEXT")
+            db.execSQL("ALTER TABLE `pozicije` ADD COLUMN `dobitKada` TEXT")
+            db.execSQL("ALTER TABLE `pozicije` ADD COLUMN `dobitGrupaId` INTEGER")
+            db.execSQL("ALTER TABLE `pozicije` ADD COLUMN `dobitKnjizena` INTEGER NOT NULL DEFAULT 0")
         }
     }
 

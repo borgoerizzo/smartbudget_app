@@ -143,8 +143,24 @@ data class Pozicija(
     val nominalCenti: Long? = null,
     /** Rok ulaganja ili dospijeće (opcionalno za sva ulaganja); aplikacija podsjeća prije isteka. */
     val dospijeceEpochDan: Long? = null,
+    /**
+     * Kamo ide dobit ručnog zapisa (iznos pri dospijeću − uloženo): "r:<račun>", "c:<id cilja>", "n:<id novčanika>";
+     * null = dobit se samo prikazuje.
+     */
+    val dobitNa: String? = null,
+    /** Kada se dobit upisuje: [DOBIT_ODMAH] (pri kupnji) ili [DOBIT_DOSPIJECE] (na dan dospijeća). */
+    val dobitKada: String? = null,
+    /** grupaId upisane dobiti (transakcija, uplata na cilj ili promjena novčanika), za poništavanje. */
+    val dobitGrupaId: Long? = null,
+    /** Dobit je upisana; vrijednost zapisa tada ostaje na uloženom iznosu (da se ne broji dvaput). */
+    @ColumnInfo(defaultValue = "0") val dobitKnjizena: Boolean = false,
 ) {
     val rucno: Boolean get() = nominalCenti != null
+
+    companion object {
+        const val DOBIT_ODMAH = "ODMAH"
+        const val DOBIT_DOSPIJECE = "DOSPIJECE"
+    }
 }
 
 /** Kupnja (pozitivna količina) ili prodaja (negativna) ulaganja. */

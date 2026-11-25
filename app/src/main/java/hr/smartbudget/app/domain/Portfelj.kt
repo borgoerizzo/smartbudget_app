@@ -31,8 +31,13 @@ data class StanjePozicije(
         val dosp = pozicija.dospijeceEpochDan ?: return null
         val nominal = (pozicija.nominalCenti ?: return null) / 100.0
         val ul = (ulozeno ?: return null) / 100.0
+        // Dobit je već upisana na drugo mjesto (račun, cilj, novčanik): zapis vrijedi samo glavnicu.
+        if (pozicija.dobitKnjizena) return if (dan < (kupljenoEpochDan ?: dan)) 0.0 else ul
         return Portfelj.vrijednostZapisa(ul, nominal, kupljenoEpochDan ?: dan, dosp, dan)
     }
+
+    /** Ukupna dobit ručnog zapisa (iznos pri dospijeću − uloženo), u centima. */
+    val dobitCenti: Long? get() = pozicija.nominalCenti?.let { n -> ulozeno?.let { n - it } }
 
     /** Godišnji prinos ručnog zapisa u postocima (jednostavna kamata, stvarni broj dana / 365). */
     val prinosGodisnji: Double?

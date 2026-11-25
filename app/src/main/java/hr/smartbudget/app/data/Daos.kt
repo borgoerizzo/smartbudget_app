@@ -254,6 +254,9 @@ interface NovcanikDao {
     @Delete
     suspend fun obrisiPromjenu(p: PromjenaNovcanika)
 
+    @androidx.room.Update
+    suspend fun azurirajPromjenu(p: PromjenaNovcanika)
+
     @Query("DELETE FROM promjene_novcanika WHERE novcanikId = :id")
     suspend fun obrisiPromjeneZa(id: Long)
 
@@ -307,6 +310,9 @@ interface PozicijaDao {
 
     @Delete
     suspend fun obrisiPromjenu(p: PromjenaPozicije)
+
+    @androidx.room.Update
+    suspend fun azurirajPromjenu(p: PromjenaPozicije)
 
     @Query("DELETE FROM promjene_pozicija WHERE pozicijaId = :id")
     suspend fun obrisiPromjeneZa(id: Long)

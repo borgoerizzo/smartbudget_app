@@ -366,6 +366,108 @@ class BudgetRepository private constructor(val context: Context) {
         post.oznaciRokove(zaSlanje.flatMap { it.kljucevi })
     }
 
+    // --- Dobit ručnih zapisa (trezorski zapisi, obveznice) ---
+
+    /** Kategorija prihoda za dobit od ulaganja (vidljiva u prihodima i analitici). */
+    private suspend fun kategorijaPrinosa(): Long =
+        kDao.sve().firstOrNull { it.naziv == KATEGORIJA_PRINOSA && it.tip == TipTransakcije.PRIHOD }?.id
+            ?: kDao.spremi(Kategorija(naziv = KATEGORIJA_PRINOSA, bojaHex = "#00F5A0", ikonaNaziv = "piggy", tip = TipTransakcije.PRIHOD))
+
+    /**
+     * Upisuje dobit zapisa na odredište: račun (prihod "Prinos od ulaganja"), cilj štednje (uplata) ili
+     * novčanik u osnovnoj valuti (uplata). Vraća grupaId za kasnije poništavanje; null ako odredište ne postoji.
+     */
+    private suspend fun upisiDobit(p: Pozicija, iznosCenti: Long, dan: Long): Long? {
+        val odr = p.dobitNa ?: return null
+        val grupa = System.currentTimeMillis()
+        val opis = "Dobit: ${p.naziv}"
+        when {
+            odr.startsWith("r:") -> tDao.spremi(
+                Transakcija(
+                    tip = TipTransakcije.PRIHOD, iznosCenti = iznosCenti,
+                    datumVrijeme = LocalDate.ofEpochDay(dan).atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                    kategorijaId = kategorijaPrinosa(), opis = opis, nacinPlacanja = odr.removePrefix("r:"), grupaId = grupa,
+                ),
+            )
+            odr.startsWith("c:") -> {
+                val c = db.ciljevi().sve().firstOrNull { it.id == odr.removePrefix("c:").toLongOrNull() } ?: return null
+                db.ciljevi().spremi(c.copy(ustedjenoCenti = c.ustedjenoCenti + iznosCenti))
+                db.uplate().umetni(UplataCilja(ciljId = c.id, iznosCenti = iznosCenti, epochDan = dan, grupaId = grupa))
+            }
+            odr.startsWith("n:") -> {
+                val n = db.novcanici().sve().firstOrNull { it.id == odr.removePrefix("n:").toLongOrNull() } ?: return null
+                db.novcanici().umetniPromjenu(PromjenaNovcanika(novcanikId = n.id, jedinice = iznosCenti, epochDan = dan, napomena = opis, grupaId = grupa))
+            }
+            else -> return null
+        }
+        return grupa
+    }
+
+    /** Poništava upisanu dobit zapisa (briše transakciju, uplatu na cilj ili promjenu novčanika). */
+    private suspend fun ponistiDobit(p: Pozicija) {
+        val g = p.dobitGrupaId ?: return
+        tDao.obrisiGrupu(g)
+        db.uplate().sve().filter { it.grupaId == g }.forEach { u ->
+            db.ciljevi().sve().firstOrNull { it.id == u.ciljId }?.let { c ->
+                db.ciljevi().spremi(c.copy(ustedjenoCenti = (c.ustedjenoCenti - u.iznosCenti).coerceAtLeast(0)))
+            }
+            db.uplate().obrisi(u)
+        }
+        db.novcanici().svePromjene().filter { it.grupaId == g }.forEach { db.novcanici().obrisiPromjenu(it) }
+    }
+
+    /** Upisuje dobit ako je za to vrijeme (odmah ili dospjelo) i još nije upisana; vraća ažuriranu poziciju. */
+    private suspend fun upisiDobitAkoTreba(p: Pozicija, danas: Long = LocalDate.now().toEpochDay()): Pozicija {
+        if (!p.rucno || p.dobitKnjizena || p.dobitNa == null) return p
+        val promjene = db.pozicije().svePromjene().filter { it.pozicijaId == p.id }
+        if (promjene.sumOf { it.kolicinaMikro } <= 0) return p // isplaćen ili reinvestiran
+        val kupnja = promjene.filter { it.kolicinaMikro > 0 }.minByOrNull { it.epochDan } ?: return p
+        val ul = kupnja.ulozenoCenti ?: return p
+        val dobit = (p.nominalCenti ?: return p) - ul
+        val dosp = p.dospijeceEpochDan ?: return p
+        val dan = when (p.dobitKada) {
+            Pozicija.DOBIT_ODMAH -> kupnja.epochDan
+            Pozicija.DOBIT_DOSPIJECE -> dosp.takeIf { it <= danas } ?: return p
+            else -> return p
+        }
+        if (dobit <= 0) return p
+        val g = upisiDobit(p, dobit, dan) ?: return p
+        return p.copy(dobitGrupaId = g, dobitKnjizena = true).also { db.pozicije().spremi(it) }
+    }
+
+    /**
+     * Novi ili uređeni ručni zapis (trezorski zapis, obveznica) s jednom kupnjom: postojeća upisana dobit se
+     * poništava i, ovisno o izboru (odmah ili pri dospijeću), upisuje iznova s novim iznosima.
+     */
+    suspend fun spremiZapis(p: Pozicija, ulozenoCenti: Long, kupljenoEpochDan: Long): Long = db.withTransaction {
+        val stara = if (p.id == 0L) null else db.pozicije().sve().firstOrNull { it.id == p.id }
+        stara?.let { ponistiDobit(it) }
+        val bez = p.copy(dobitGrupaId = null, dobitKnjizena = false)
+        val id = db.pozicije().spremi(bez).let { if (p.id == 0L) it else p.id }
+        val kupnja = db.pozicije().svePromjene().filter { it.pozicijaId == id && it.kolicinaMikro > 0 }.minByOrNull { it.epochDan }
+        if (kupnja == null) {
+            db.pozicije().umetniPromjenu(PromjenaPozicije(pozicijaId = id, kolicinaMikro = 1_000_000, epochDan = kupljenoEpochDan, ulozenoCenti = ulozenoCenti))
+        } else {
+            db.pozicije().azurirajPromjenu(kupnja.copy(epochDan = kupljenoEpochDan, ulozenoCenti = ulozenoCenti))
+        }
+        upisiDobitAkoTreba(bez.copy(id = id))
+        id
+    }.also { promjena() }
+
+    /** Na dan dospijeća upisuje dobit zapisa kojima je odabrano "pri dospijeću" (pozadinski posao i otvaranje aplikacije). */
+    suspend fun upisiDospjeleDobiti() {
+        var bilo = false
+        db.withTransaction {
+            db.pozicije().sve().filter { it.rucno && !it.dobitKnjizena && it.dobitKada == Pozicija.DOBIT_DOSPIJECE }.forEach {
+                if (upisiDobitAkoTreba(it).dobitKnjizena) bilo = true
+            }
+        }
+        if (bilo) promjena()
+    }
+
+    suspend fun azurirajPromjenuPozicije(p: PromjenaPozicije) = db.pozicije().azurirajPromjenu(p).also { BackupManager.get(context).nakonPromjene() }
+    suspend fun azurirajPromjenuNovcanika(p: PromjenaNovcanika) = db.novcanici().azurirajPromjenu(p).also { BackupManager.get(context).nakonPromjene() }
+
     // --- Ulaganja u vlasništvu (dionice, ETF-ovi, obveznice, roba) ---
 
     /** Novo ulaganje s prvom kupnjom; ako isti simbol već postoji, kupnja se dodaje njemu. Vraća id. */
@@ -380,6 +482,8 @@ class BudgetRepository private constructor(val context: Context) {
     suspend fun spremiPoziciju(p: Pozicija) = db.pozicije().spremi(p).also { BackupManager.get(context).nakonPromjene() }
 
     suspend fun obrisiPoziciju(p: Pozicija) = db.withTransaction {
+        // Upisana dobit se poništava, kao da zapisa nije ni bilo.
+        db.pozicije().sve().firstOrNull { it.id == p.id }?.let { ponistiDobit(it) }
         db.pozicije().obrisiPromjeneZa(p.id)
         db.pozicije().obrisi(p)
     }.also { BackupManager.get(context).nakonPromjene() }
@@ -519,6 +623,9 @@ class BudgetRepository private constructor(val context: Context) {
     companion object {
         /** Oznaka (ikonaNaziv) skrivene kategorije prijenosa. */
         const val KATEGORIJA_PRIJENOSA = "__prijenos"
+
+        /** Kategorija prihoda za upisanu dobit trezorskih zapisa i obveznica. */
+        const val KATEGORIJA_PRINOSA = "Prinos od ulaganja"
 
         fun prilagodbeMapa(lista: List<PrilagodbaCiklusa>): Map<YearMonth, LocalDate> =
             lista.mapNotNull { p -> runCatching { YearMonth.parse(p.sidro) to LocalDate.ofEpochDay(p.pocetakEpochDan) }.getOrNull() }.toMap()
