@@ -63,13 +63,20 @@ fun Modifier.neonSjaj(boja: Color, radijus: Dp = 18.dp, zaobljenje: Dp = 20.dp, 
 fun PozadinaEkrana(
     gore: Color = Neon.Zelena.copy(alpha = .10f),
     desno: Color = Color(0x337B2CBF),
+    /** Crveni zaslon: potrošena su rezervirana sredstva tekućeg računa. */
+    uzbuna: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Neon.Pozadina)
+            .background(if (uzbuna) Color(0xFF2B0711) else Neon.Pozadina)
             .drawBehind {
+                if (uzbuna) {
+                    drawRect(Brush.verticalGradient(listOf(Color(0x99FF2A6D), Color(0x33FF2A6D), Color(0x66FF2A6D))))
+                    drawRect(Color(0xFFFF2A6D), style = androidx.compose.ui.graphics.drawscope.Stroke(4.dp.toPx()))
+                    return@drawBehind
+                }
                 drawCircle(Brush.radialGradient(listOf(gore, Color.Transparent), Offset(0f, 0f), size.width * 1.0f), size.width * 1.0f, Offset(0f, 0f))
                 drawCircle(
                     Brush.radialGradient(listOf(desno, Color.Transparent), Offset(size.width, size.height * .08f), size.width * .95f),

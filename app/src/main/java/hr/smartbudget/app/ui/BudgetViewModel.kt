@@ -243,11 +243,53 @@ class BudgetViewModel(app: Application) : AndroidViewModel(app) {
     val racuni: StateFlow<List<Racun>> = repo.db.racuni().promatrajSve()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** Stanje svakog računa: početno stanje + njegove transakcije. */
-    val stanjaRacuna: StateFlow<List<StanjeRacunaUi>> = combine(racuni, tDao.promatrajPoRacunima()) { r, z ->
-        val m = z.associate { it.nacinPlacanja to it.stanje }
-        r.map { StanjeRacunaUi(it, it.pocetnoStanjeCenti + (m[it.naziv] ?: 0L)) }
+    /** Svi unosi (za stanja računa s ručno unesenim stanjem i graf tekućeg računa). */
+    private val sviUnosi: StateFlow<List<hr.smartbudget.app.data.Transakcija>> = tDao.promatrajSve()
+        .map { l -> l.map { it.transakcija } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Stanje svakog računa: početno (ili ručno uneseno) stanje + njegove transakcije. */
+    val stanjaRacuna: StateFlow<List<StanjeRacunaUi>> = combine(racuni, sviUnosi) { r, tx ->
+        r.map { StanjeRacunaUi(it, hr.smartbudget.app.domain.TekuciRacun.stanje(it, tx)) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // --- Tekući račun i rezervirana sredstva ---
+
+    val rezervacije: StateFlow<List<hr.smartbudget.app.data.Rezervacija>> = repo.db.rezervacije().promatrajSve()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Stanje tekućeg računa s rezervacijama; null kad nijedan račun nije označen kao tekući. */
+    val tekuci: StateFlow<hr.smartbudget.app.domain.StanjeTekuceg?> = combine(racuni, sviUnosi, rezervacije) { r, tx, rez ->
+        hr.smartbudget.app.domain.TekuciRacun.stanjeTekuceg(r, tx, rez)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Razdoblje grafa tekućeg računa u danima. */
+    val danaTekuceg = MutableStateFlow(90)
+    fun postaviDaneTekuceg(d: Int) { danaTekuceg.value = d }
+
+    /** Stanje tekućeg računa po danima za analitiku. */
+    val tijekTekuceg: StateFlow<List<hr.smartbudget.app.domain.TockaRacuna>> = combine(racuni, sviUnosi, rezervacije, danaTekuceg, danas) { r, tx, rez, n, d ->
+        val t = r.firstOrNull { it.tekuci } ?: return@combine emptyList()
+        // Ne prije prvog unosa na račun (ili trenutka unosa stanja), da graf ne počinje praznim mjesecima.
+        val zona = ZoneId.systemDefault()
+        val prvi = (tx.filter { it.nacinPlacanja == t.naziv }.map { it.datumVrijeme } + listOfNotNull(t.sidroMillis)).minOrNull()
+            ?.let { java.time.Instant.ofEpochMilli(it).atZone(zona).toLocalDate() } ?: d
+        val od = maxOf(d.minusDays(n.toLong() - 1), prvi.minusDays(1)).let { if (it.isAfter(d.minusDays(6))) d.minusDays(6) else it }
+        hr.smartbudget.app.domain.TekuciRacun.poDanima(t, tx, rez, od, d, zona)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun postaviStanjeRacuna(r: Racun, iznosCenti: Long) = repo.opseg.launch {
+        repo.postaviStanjeRacuna(r, iznosCenti)
+        _poruke.tryEmit("Stanje računa ${r.naziv}: ${Novac.stanje(iznosCenti)}")
+    }
+    fun postaviTekuci(r: Racun) = repo.opseg.launch { repo.postaviTekuci(r); _poruke.tryEmit("${r.naziv} je tekući račun") }
+    fun spremiRezervaciju(r: hr.smartbudget.app.data.Rezervacija) = repo.opseg.launch {
+        repo.spremiRezervaciju(r); _poruke.tryEmit(if (r.id == 0L) "Rezervirano ${Novac.eur(r.iznosCenti)}" else "Rezervacija spremljena")
+    }
+    fun oslobodiRezervaciju(r: hr.smartbudget.app.data.Rezervacija) = repo.opseg.launch {
+        repo.spremiRezervaciju(r.copy(oslobodenoMillis = System.currentTimeMillis())); _poruke.tryEmit("Oslobođeno ${Novac.eur(r.iznosCenti)}")
+    }
+    fun obrisiRezervaciju(r: hr.smartbudget.app.data.Rezervacija) = repo.opseg.launch { repo.obrisiRezervaciju(r); _poruke.tryEmit("Rezervacija obrisana") }
 
     val ciljevi: StateFlow<List<CiljStednje>> = repo.db.ciljevi().promatrajSve()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())

@@ -25,6 +25,8 @@ data class InfoObavijesti(
     val tekst: String,
     val redovi: List<String> = emptyList(),
     val test: Boolean = false,
+    /** Objašnjenje u prozoru obavijesti umjesto zadanog za vrstu. */
+    val objasnjenje: String? = null,
 )
 
 /** Obavijesti: naplaćeni ponavljajući unosi, minus, prognoza limita i dnevni podsjetnik. */
@@ -37,6 +39,7 @@ object Obavijesti {
     private const val ID_PROGNOZA = 2000
     private const val ID_TEST = 3000
     private const val ID_ROK = 4000
+    private const val ID_REZERVA = 1006
 
     private const val EXTRA_VRSTA = "obavijest_vrsta"
     private const val EXTRA_NASLOV = "obavijest_naslov"
@@ -189,6 +192,25 @@ object Obavijesti {
         }
         postavke.zadnjeStanjeNegativno = negativno
     }
+
+    /** Jednom, u trenutku kad stanje tekućeg računa padne ispod rezerviranog iznosa. */
+    fun provjeriRezervu(context: Context, s: hr.smartbudget.app.domain.StanjeTekuceg) {
+        val postavke = AppPostavke.get(context)
+        val zadire = s.zadireURezervu
+        if (zadire && !postavke.zadnjeURezervi && postavke.stanje.value.obavijestMinus) {
+            posalji(context, ID_REZERVA, infoRezerva(s.manjak, s.rezervirano))
+        }
+        postavke.zadnjeURezervi = zadire
+    }
+
+    private fun infoRezerva(manjakCenti: Long, rezerviranoCenti: Long, test: Boolean = false) = InfoObavijesti(
+        VrstaObavijesti.MINUS,
+        (if (test) "[Test] " else "") + "Zadirete u rezervirana sredstva",
+        "Potrošeno ${Novac.eur(manjakCenti)} od rezerviranih ${Novac.eur(rezerviranoCenti)}",
+        test = test,
+        objasnjenje = "Stanje tekućeg računa palo je ispod iznosa koji ste rezervirali. Zaslon ostaje crven dok stanje ne bude " +
+            "ponovno barem jednako rezerviranom (prihod ili prijenos na račun) ili dok ne oslobodite rezervaciju u Štednji → Tekući račun.",
+    )
 
     /** Testna obavijest s primjerom podataka, da korisnik vidi kako izgleda (šalje se i kad je vrsta isključena). */
     fun test(context: Context, vrsta: VrstaObavijesti) {

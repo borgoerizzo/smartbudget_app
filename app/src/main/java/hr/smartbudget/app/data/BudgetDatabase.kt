@@ -11,9 +11,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         Transakcija::class, Kategorija::class, PostavkeCiklusa::class, PonavljajuciUnos::class,
         PrilagodbaCiklusa::class, Racun::class, CiljStednje::class, UplataCilja::class, Novcanik::class, PromjenaNovcanika::class,
-        Pozicija::class, PromjenaPozicije::class,
+        Pozicija::class, PromjenaPozicije::class, Rezervacija::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class BudgetDatabase : RoomDatabase() {
@@ -27,6 +27,7 @@ abstract class BudgetDatabase : RoomDatabase() {
     abstract fun uplate(): UplataDao
     abstract fun novcanici(): NovcanikDao
     abstract fun pozicije(): PozicijaDao
+    abstract fun rezervacije(): RezervacijaDao
 
     companion object {
         /** Tekući račun, Kartica i Gotovina (dosadašnji načini plaćanja). */
@@ -48,7 +49,7 @@ abstract class BudgetDatabase : RoomDatabase() {
         fun get(context: Context): BudgetDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, BudgetDatabase::class.java, "smartbudget.db")
                 .addCallback(Pocetni)
-                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7, MIGRACIJA_7_8, MIGRACIJA_8_9, MIGRACIJA_9_10, MIGRACIJA_10_11, MIGRACIJA_11_12)
+                .addMigrations(MIGRACIJA_1_2, MIGRACIJA_2_3, MIGRACIJA_3_4, MIGRACIJA_4_5, MIGRACIJA_5_6, MIGRACIJA_6_7, MIGRACIJA_7_8, MIGRACIJA_8_9, MIGRACIJA_9_10, MIGRACIJA_10_11, MIGRACIJA_11_12, MIGRACIJA_12_13)
                 .build()
                 .also { instance = it }
         }
@@ -204,6 +205,20 @@ abstract class BudgetDatabase : RoomDatabase() {
         }
     }
 
+    /** v13: tekući račun s ručno unesenim stanjem i rezervirana sredstva. */
+    private object MIGRACIJA_12_13 : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `racuni` ADD COLUMN `tekuci` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE `racuni` ADD COLUMN `sidroCenti` INTEGER")
+            db.execSQL("ALTER TABLE `racuni` ADD COLUMN `sidroMillis` INTEGER")
+            oznaciTekuci(db)
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `rezervacije` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `iznosCenti` INTEGER NOT NULL, " +
+                    "`napomena` TEXT NOT NULL, `kreiranMillis` INTEGER NOT NULL, `oslobodenoMillis` INTEGER)",
+            )
+        }
+    }
+
     /** Početne kategorije i postavke pri prvom pokretanju; korisnik ih poslije slobodno mijenja. */
     private object Pocetni : Callback() {
         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -227,6 +242,15 @@ abstract class BudgetDatabase : RoomDatabase() {
             }
             db.execSQL("INSERT INTO postavke_ciklusa (id, pocetniDanUCiklusu, nacinObradeKrajaMjeseca) VALUES (1, 1, 1)")
             pocetniRacuni(db)
+            oznaciTekuci(db)
         }
     }
+}
+
+/** Račun "Tekući račun" (ili prvi račun) postaje tekući, ako nijedan još nije. */
+internal fun oznaciTekuci(db: SupportSQLiteDatabase) {
+    db.execSQL(
+        "UPDATE racuni SET tekuci = 1 WHERE (SELECT COUNT(*) FROM racuni WHERE tekuci = 1) = 0 AND id = " +
+            "COALESCE((SELECT id FROM racuni WHERE naziv = 'Tekući račun' ORDER BY id LIMIT 1), (SELECT id FROM racuni ORDER BY redoslijed, id LIMIT 1))",
+    )
 }

@@ -62,6 +62,11 @@ data class Racun(
     val ikonaNaziv: String,
     val pocetnoStanjeCenti: Long = 0,
     val redoslijed: Int = 0,
+    /** Tekući račun: njegovo stanje korisnik unosi ručno, prikazuje se na Početnoj i u Štednji, s rezervacijama. */
+    @ColumnInfo(defaultValue = "0") val tekuci: Boolean = false,
+    /** Ručno uneseno stvarno stanje računa ([sidroCenti]) u trenutku [sidroMillis]; poslije se mijenja samo unosima nakon tog trenutka. */
+    val sidroCenti: Long? = null,
+    val sidroMillis: Long? = null,
 )
 
 /** Cilj štednje s rokom; ušteđeni iznos korisnik ručno povećava uplatama. */
@@ -265,3 +270,17 @@ data class TransakcijaSKategorijom(
     @Relation(parentColumn = "kategorijaId", entityColumn = "id")
     val kategorija: Kategorija,
 )
+
+
+/** Iznos rezerviran na tekućem računu koji se ne smije trošiti; oslobođena rezervacija ostaje u povijesti. */
+@Entity(tableName = "rezervacije")
+data class Rezervacija(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val iznosCenti: Long,
+    val napomena: String = "",
+    val kreiranMillis: Long,
+    /** Trenutak oslobađanja; null = rezervacija je aktivna. */
+    val oslobodenoMillis: Long? = null,
+) {
+    val aktivna get() = oslobodenoMillis == null
+}

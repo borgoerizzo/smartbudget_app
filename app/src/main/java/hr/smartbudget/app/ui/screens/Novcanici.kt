@@ -540,6 +540,9 @@ fun StednjaTab(
     /** Za dijeljenje i izvoz cijele štednje. */
     pozicije: List<hr.smartbudget.app.domain.StanjePozicije> = emptyList(),
     cijene: hr.smartbudget.app.ui.CijeneUlaganja = hr.smartbudget.app.ui.CijeneUlaganja(),
+    /** Tekući račun: njegovo stanje je dio ukupne štednje. */
+    tekuci: hr.smartbudget.app.domain.StanjeTekuceg? = null,
+    tekuciKartica: @Composable () -> Unit = {},
 ) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val opseg = androidx.compose.runtime.rememberCoroutineScope()
@@ -547,6 +550,7 @@ fun StednjaTab(
     val doCiljeva = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val doValuta = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     val doUlaganja = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val doTekuceg = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     fun skoci(r: androidx.compose.foundation.relocation.BringIntoViewRequester) = opseg.launch {
         r.bringIntoView(androidx.compose.ui.geometry.Rect(0f, 0f, 1f, 100_000f))
     }
@@ -611,10 +615,18 @@ fun StednjaTab(
     val uCiljevima = ciljevi.sumOf { hr.smartbudget.app.domain.ustedjenoCilja(it, uplate, uOsnovnu).centi } / 100.0
     val uNovcanicima = novcanici.sumOf { uOsnovnu(it.stanje, it.valuta) ?: 0.0 }
     val ukupnoCilj = ciljevi.sumOf { it.ciljCenti } / 100.0
+    val naTekucem = (tekuci?.stanje ?: 0L) / 100.0
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         hr.smartbudget.app.ui.Kartica(razmak = 12.dp, sjaj = Neon.LjubicastaSvijetla) {
             Text("Ukupna štednja", style = Tip.oznaka)
-            Text(Valute.iznos(uCiljevima + uNovcanicima + ulaganja, osnovna), fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = Neon.LjubicastaTekst, maxLines = 1, modifier = Modifier.skrivaStednju())
+            Text(Valute.iznos(uCiljevima + uNovcanicima + ulaganja + naTekucem, osnovna), fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = Neon.LjubicastaTekst, maxLines = 1, modifier = Modifier.skrivaStednju())
+            if (tekuci != null) {
+                PlocicaStednje(
+                    "Tekući račun", Novac.stanje(tekuci.stanje),
+                    if (tekuci.rezervirano > 0) "slobodno ${Novac.stanje(tekuci.slobodno)} · rezervirano ${Novac.eur(tekuci.rezervirano)}" else tekuci.racun.naziv,
+                    Modifier.fillMaxWidth(),
+                ) { skoci(doTekuceg) }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PlocicaStednje("Ciljevi", Valute.iznos(uCiljevima, osnovna), if (ukupnoCilj > 0) "od ${Valute.iznos(ukupnoCilj, osnovna)}" else "${ciljevi.size} ciljeva", Modifier.weight(1f)) { skoci(doCiljeva) }
                 PlocicaStednje("U valutama", Valute.iznos(uNovcanicima, osnovna), "${novcanici.size} novčanika", Modifier.weight(1f)) { skoci(doValuta) }
@@ -633,6 +645,7 @@ fun StednjaTab(
                 IzvorTecajeva(t, kripto = novcanici.any { it.valuta.kripto }, fiat = true)
             }
         }
+        Box(Modifier.bringIntoViewRequester(doTekuceg)) { tekuciKartica() }
         Box(Modifier.bringIntoViewRequester(doCiljeva)) { ciljeviKartica() }
         Box(Modifier.bringIntoViewRequester(doValuta)) { novcaniciKartica() }
         Box(Modifier.bringIntoViewRequester(doUlaganja)) { ulaganjaKartica() }

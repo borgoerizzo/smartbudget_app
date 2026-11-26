@@ -223,6 +223,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
     LaunchedEffect(pozicije.map { it.pozicija.simbol }.toSet()) {
         if (pozicije.isNotEmpty()) { vm.osvjeziCijeneUlaganja(); if (tecajevi.hnb == null) vm.osvjeziTecajeve() }
     }
+    val tekuci by vm.tekuci.collectAsState()
     val zadnjiUnosi by vm.zadnjiUnosi.collectAsState()
     val godisnji by vm.godisnji.collectAsState()
     val naziviRacuna = racuni.map { it.naziv }
@@ -234,7 +235,7 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
         Ekran.ULAGANJA -> Neon.Zelena.copy(alpha = .08f) to Neon.Cijan.copy(alpha = .08f)
         Ekran.POSTAVKE -> Neon.Cijan.copy(alpha = .08f) to Color(0x2E7B2CBF)
     }
-    PozadinaEkrana(gore, desno) {
+    PozadinaEkrana(gore, desno, uzbuna = tekuci?.zadireURezervu == true) {
         when (ekran) {
             Ekran.POCETNA -> PocetnaEkran(
                 s = pocetna,
@@ -256,6 +257,8 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 onPrijenos = { sheet = Sheet.Prijenos },
                 onObrisi = vm::obrisiTransakcije,
                 onPostavke = { ekran = Ekran.POSTAVKE },
+                tekuci = tekuci,
+                onSpremiStanje = vm::postaviStanjeRacuna,
                 stednja = {
                     StednjaTab(
                         ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve, { sheet = Sheet.Prijenos },
@@ -294,6 +297,13 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                         },
                         pozicije = pozicije,
                         cijene = cijeneUlaganja,
+                        tekuci = tekuci,
+                        tekuciKartica = {
+                            hr.smartbudget.app.ui.screens.TekuciRacunKartica(
+                                tekuci, racuni, vm::postaviStanjeRacuna, vm::spremiRezervaciju,
+                                vm::oslobodiRezervaciju, vm::obrisiRezervaciju, vm::postaviTekuci,
+                            )
+                        },
                     )
                 },
             )
@@ -305,6 +315,11 @@ private fun Aplikacija(vm: BudgetViewModel = viewModel()) {
                 stednja = { StednjaZasticena { StednjaAnalitikaKartica(ciljevi, uplate, novcanici, tecajevi, vm::osvjeziTecajeve, vrijednostUlaganja) } },
                 imaKripta = novcanici.any { it.valuta.kripto },
                 kripto = { StednjaZasticena { KriptoAnalitikaKartica(novcanici, tecajevi, kriptoPovijest, vm::osvjeziTecajeve, vm::osvjeziKriptoPovijest) } },
+                tekuci = {
+                    val tocke by vm.tijekTekuceg.collectAsState()
+                    val dana by vm.danaTekuceg.collectAsState()
+                    StednjaZasticena { hr.smartbudget.app.ui.screens.TekuciAnalitikaKartica(tekuci, tocke, dana, vm::postaviDaneTekuceg) }
+                },
                 imaUlaganja = pozicije.any { it.kolicinaMikro > 0 },
                 ulaganja = {
                     StednjaZasticena {

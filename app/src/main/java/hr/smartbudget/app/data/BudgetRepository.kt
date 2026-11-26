@@ -573,8 +573,29 @@ class BudgetRepository private constructor(val context: Context) {
         StanjeWidget.osvjezi(context)
         runCatching { provjeriPrognoze() }
         Obavijesti.provjeriMinus(context, tDao.ukupnoStanje())
+        runCatching { stanjeTekuceg()?.let { Obavijesti.provjeriRezervu(context, it) } }
         BackupManager.get(context).nakonPromjene()
     }
+
+    // --- Tekući račun i rezervacije ---
+
+    suspend fun stanjeTekuceg(): hr.smartbudget.app.domain.StanjeTekuceg? =
+        hr.smartbudget.app.domain.TekuciRacun.stanjeTekuceg(db.racuni().sve(), tDao.sve(), db.rezervacije().sve())
+
+    /** Korisnik unosi stvarno stanje tekućeg računa (npr. s bankovne aplikacije) u ovom trenutku. */
+    suspend fun postaviStanjeRacuna(r: Racun, iznosCenti: Long) {
+        db.racuni().spremi(r.copy(sidroCenti = iznosCenti, sidroMillis = System.currentTimeMillis()))
+        promjena()
+    }
+
+    /** Samo jedan račun je tekući. */
+    suspend fun postaviTekuci(r: Racun) {
+        db.withTransaction { db.racuni().sve().forEach { x -> if (x.tekuci != (x.id == r.id)) db.racuni().spremi(x.copy(tekuci = x.id == r.id)) } }
+        promjena()
+    }
+
+    suspend fun spremiRezervaciju(r: Rezervacija) { db.rezervacije().spremi(r); promjena() }
+    suspend fun obrisiRezervaciju(r: Rezervacija) { db.rezervacije().obrisi(r); promjena() }
 
     /**
      * Stvara transakcije za sve dospjele ponavljajuće unose (i propuštene mjesece).

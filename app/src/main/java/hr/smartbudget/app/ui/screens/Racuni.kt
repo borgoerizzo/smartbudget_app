@@ -143,7 +143,11 @@ fun RacunSheet(postojeci: Racun?, onSpremi: (Racun, String?) -> Unit, onObrisi: 
         }
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OznakaPolja("Početno stanje (${Novac.simbol})")
-            Text("Stanje računa prije prvog unosa u aplikaciji", style = Tip.malo.copy(fontSize = 12.sp))
+            Text(
+                if (postojeci?.sidroCenti != null) "Stanje ovog računa uneseno je ručno (Štednja → Tekući račun), pa se početno stanje ne koristi."
+                else "Stanje računa prije prvog unosa u aplikaciji",
+                style = Tip.malo.copy(fontSize = 12.sp),
+            )
             NeonPolje(
                 iznos, { iznos = it }, Modifier.fillMaxWidth(), placeholder = "0,00", uCentima = true,
                 stil = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = if (minus) Neon.Crvena else Neon.Tekst, fontFeatureSettings = "tnum"),
@@ -184,7 +188,10 @@ fun RacunSheet(postojeci: Racun?, onSpremi: (Racun, String?) -> Unit, onObrisi: 
             if (naziv.isBlank()) { greska = "Unesite naziv računa."; return@PrimarniGumb }
             val c = (Novac.parsiraj(iznos) ?: 0L) * (if (minus) -1 else 1)
             onSpremi(
-                Racun(id = postojeci?.id ?: 0, naziv = naziv.trim(), bojaHex = boja, ikonaNaziv = ikona, pocetnoStanjeCenti = c, redoslijed = postojeci?.redoslijed ?: 50),
+                // copy: zadržava oznaku tekućeg računa i ručno uneseno stanje
+                (postojeci ?: Racun(naziv = "", bojaHex = boja, ikonaNaziv = ikona)).copy(
+                    naziv = naziv.trim(), bojaHex = boja, ikonaNaziv = ikona, pocetnoStanjeCenti = c, redoslijed = postojeci?.redoslijed ?: 50,
+                ),
                 postojeci?.naziv,
             )
             onZatvori()

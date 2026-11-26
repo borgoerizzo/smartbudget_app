@@ -135,7 +135,14 @@ fun PocetnaEkran(
     onObrisi: (List<hr.smartbudget.app.data.Transakcija>) -> Unit = {},
     /** Zupčanik gore desno otvara Postavke. */
     onPostavke: () -> Unit = {},
+    /** Stanje tekućeg računa s rezervacijama (null = nije odabran tekući račun). */
+    tekuci: hr.smartbudget.app.domain.StanjeTekuceg? = null,
+    onSpremiStanje: (Racun, Long) -> Unit = { _, _ -> },
 ) {
+    var unosStanja by remember { mutableStateOf(false) }
+    if (unosStanja && tekuci != null) {
+        UnosStanjaDijalog(tekuci.racun, tekuci.stanje, { onSpremiStanje(tekuci.racun, it); unosStanja = false }) { unosStanja = false }
+    }
     val context = LocalContext.current
     // Višestruki odabir (dugi pritisak na stavku): id-jevi odabranih; prazno = odabir nije u tijeku.
     var odabrane by remember { mutableStateOf(setOf<Long>()) }
@@ -211,6 +218,7 @@ fun PocetnaEkran(
                         Segmenti(listOf("Ciklus", "Štednja"), tab, { tab = it; odabrane = emptySet() }, Modifier.weight(1f), boje = listOf(Neon.Zelena, Neon.LjubicastaSvijetla))
                         KruzniGumb("postavke", "Postavke", onPostavke, velicina = 52.dp)
                     }
+                    if (tekuci?.zadireURezervu == true) UpozorenjeRezerve(tekuci, skriveno = privatnost.sakrijStanje)
                     if (tab == 0 && !ciklusZakljucan) Zaglavlje(s, onPrethodni, onSljedeci, onTrenutni, onTjedniPregled) { biramRaspon = true }
                 }
             }
@@ -226,7 +234,7 @@ fun PocetnaEkran(
                 item { hr.smartbudget.app.ui.ZasticeniDio(hr.smartbudget.app.ui.Dijelovi.CIKLUS, "Ciklus") {} }
                 return@LazyColumn
             }
-            item { HeroKartica(s, privatnost, onPregled) }
+            item { HeroKartica(s, privatnost, onPregled, tekuci) { unosStanja = true } }
             item { RacuniTraka(racuni, privatnost.sakrijStanje, onRacun, onNoviRacun, onPrijenos) }
             stickyHeader {
                 Box(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -515,7 +523,10 @@ private fun RasponCiklusaDijalog(
 }
 
 @Composable
-private fun HeroKartica(s: PocetnaStanje, privatnost: StanjePostavki, onPregled: (TipTransakcije) -> Unit) {
+private fun HeroKartica(
+    s: PocetnaStanje, privatnost: StanjePostavki, onPregled: (TipTransakcije) -> Unit,
+    tekuci: hr.smartbudget.app.domain.StanjeTekuceg? = null, onTekuci: () -> Unit = {},
+) {
     val neto = s.neto
     val netoBoja = if (neto >= 0) Neon.Zelena else Neon.Crvena
     Kartica(
@@ -619,7 +630,22 @@ private fun HeroKartica(s: PocetnaStanje, privatnost: StanjePostavki, onPregled:
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            MalaMetrika("Stanje računa", if (sakrijStanje) AppPostavke.SKRIVENO else Novac.stanje(s.ukupnoStanje), if (s.ukupnoStanje >= 0) Neon.Tekst else Neon.Crvena, Modifier.weight(1f))
+            if (tekuci != null) {
+                // Stvarno stanje tekućeg računa (može biti veće od onog što je raspoloživo u ciklusu); dodir: unos stanja.
+                MalaMetrika(
+                    "Stanje računa", if (sakrijStanje) AppPostavke.SKRIVENO else Novac.stanje(tekuci.stanje),
+                    if (tekuci.zadireURezervu || tekuci.stanje < 0) Neon.Crvena else Neon.Tekst,
+                    Modifier.weight(1f).clickable(onClickLabel = "Unesi stanje tekućeg računa", onClick = onTekuci),
+                    podnaslov = when {
+                        tekuci.rezervirano > 0 -> if (sakrijStanje) "s rezervacijama" else "slobodno ${Novac.stanje(tekuci.slobodno)}"
+                        !tekuci.uneseno -> "dodirnite za unos stanja"
+                        else -> null
+                    },
+                    bojaPodnaslova = if (tekuci.slobodno < 0) Neon.Crvena else Neon.TekstSiv,
+                )
+            } else {
+                MalaMetrika("Stanje računa", if (sakrijStanje) AppPostavke.SKRIVENO else Novac.stanje(s.ukupnoStanje), if (s.ukupnoStanje >= 0) Neon.Tekst else Neon.Crvena, Modifier.weight(1f))
+            }
             MalaMetrika("Dnevno, bez fiksnih", Novac.eur(s.dnevniProsjek) + "/dan", Neon.Tekst, Modifier.weight(1f))
         }
         s.tempo?.let { (tekstSIznosom, upozorenje) ->
@@ -664,10 +690,11 @@ private fun SubMetrika(naslov: String, iznos: String, boja: Color, ikona: String
 }
 
 @Composable
-private fun MalaMetrika(naslov: String, vrijednost: String, boja: Color, modifier: Modifier) {
+private fun MalaMetrika(naslov: String, vrijednost: String, boja: Color, modifier: Modifier, podnaslov: String? = null, bojaPodnaslova: Color = Neon.TekstSiv) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(naslov, style = Tip.oznaka)
         Text(vrijednost, color = boja, style = Tip.iznos, fontSize = 15.sp, maxLines = 1)
+        podnaslov?.let { Text(it, style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp), color = bojaPodnaslova, maxLines = 1) }
     }
 }
 

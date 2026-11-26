@@ -175,6 +175,27 @@ interface RacunDao {
 }
 
 @Dao
+interface RezervacijaDao {
+    @Query("SELECT * FROM rezervacije ORDER BY oslobodenoMillis IS NOT NULL, kreiranMillis DESC, id DESC")
+    fun promatrajSve(): Flow<List<Rezervacija>>
+
+    @Query("SELECT * FROM rezervacije ORDER BY id")
+    suspend fun sve(): List<Rezervacija>
+
+    @Upsert
+    suspend fun spremi(r: Rezervacija): Long
+
+    @Delete
+    suspend fun obrisi(r: Rezervacija)
+
+    @Insert
+    suspend fun umetni(lista: List<Rezervacija>)
+
+    @Query("DELETE FROM rezervacije")
+    suspend fun obrisiSve()
+}
+
+@Dao
 interface CiljDao {
     @Query("SELECT * FROM ciljevi ORDER BY rokEpochDan IS NULL, rokEpochDan, id")
     fun promatrajSve(): Flow<List<CiljStednje>>

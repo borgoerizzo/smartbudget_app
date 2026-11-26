@@ -54,6 +54,7 @@ data class SadrzajKopije(
     val postavkeAplikacije: JSONObject? = null,
     val pozicije: List<Pozicija> = emptyList(),
     val promjenePozicija: List<PromjenaPozicije> = emptyList(),
+    val rezervacije: List<Rezervacija> = emptyList(),
 )
 
 /**
@@ -181,6 +182,7 @@ class BackupManager private constructor(private val context: Context) {
                 postavkeAplikacije = AppPostavke.get(context).zaKopiju(),
                 pozicije = db.pozicije().sve(),
                 promjenePozicija = db.pozicije().svePromjene(),
+                rezervacije = db.rezervacije().sve(),
             )
         }
     }
@@ -205,7 +207,12 @@ class BackupManager private constructor(private val context: Context) {
             db.prilagodbe().obrisiSve()
             db.prilagodbe().umetni(k.prilagodbe)
             // Kopije starijeg formata nemaju račune: zadržavaju se postojeći.
-            if (k.racuni.isNotEmpty()) { db.racuni().obrisiSve(); db.racuni().umetni(k.racuni) }
+            if (k.racuni.isNotEmpty()) {
+                db.racuni().obrisiSve()
+                // Starije kopije nemaju oznaku tekućeg računa: dobiva je "Tekući račun" (ili prvi račun).
+                val tekuci = if (k.racuni.any { it.tekuci }) null else (k.racuni.firstOrNull { it.naziv == "Tekući račun" } ?: k.racuni.minByOrNull { it.redoslijed })?.id
+                db.racuni().umetni(k.racuni.map { if (it.id == tekuci) it.copy(tekuci = true) else it })
+            }
             db.ciljevi().obrisiSve()
             db.ciljevi().umetni(k.ciljevi)
             db.uplate().obrisiSve()
@@ -218,6 +225,8 @@ class BackupManager private constructor(private val context: Context) {
             db.pozicije().obrisiSve()
             db.pozicije().umetni(k.pozicije)
             db.pozicije().umetniPromjene(k.promjenePozicija)
+            db.rezervacije().obrisiSve()
+            db.rezervacije().umetni(k.rezervacije)
         }
         k.postavkeAplikacije?.let { AppPostavke.get(context).vratiIzKopije(it) }
         hr.smartbudget.app.widget.StanjeWidget.osvjezi(context)
@@ -226,7 +235,7 @@ class BackupManager private constructor(private val context: Context) {
     companion object {
         const val ZADRZI = 10
         /** 2: ručni rasponi ciklusa; 3: računi, ciljevi, prijenosi i podjele; 4: uplate na ciljeve; 5: novčanici u valutama; 6: prijenosi na štednju; 7: veza štednje na prijenos; 8: postavke aplikacije; 9: ulaganja; 10: ručno uneseni zapisi i obveznice; 11: upis dobiti zapisa (stariji formati se i dalje mogu vratiti). */
-        private const val VERZIJA_FORMATA = 11
+        private const val VERZIJA_FORMATA = 12
 
         @Volatile private var instance: BackupManager? = null
         fun get(context: Context): BackupManager = instance ?: synchronized(this) {
@@ -261,6 +270,7 @@ class BackupManager private constructor(private val context: Context) {
                 JSONObject().apply {
                     put("id", it.id); put("naziv", it.naziv); put("bojaHex", it.bojaHex); put("ikonaNaziv", it.ikonaNaziv)
                     put("pocetnoStanjeCenti", it.pocetnoStanjeCenti); put("redoslijed", it.redoslijed)
+                    put("tekuci", it.tekuci); put("sidroCenti", it.sidroCenti ?: JSONObject.NULL); put("sidroMillis", it.sidroMillis ?: JSONObject.NULL)
                 }
             }))
             put("ciljevi", JSONArray(k.ciljevi.map {
@@ -294,6 +304,12 @@ class BackupManager private constructor(private val context: Context) {
                 JSONObject().apply {
                     put("id", it.id); put("pozicijaId", it.pozicijaId); put("kolicinaMikro", it.kolicinaMikro); put("epochDan", it.epochDan)
                     put("ulozenoCenti", it.ulozenoCenti ?: JSONObject.NULL); put("napomena", it.napomena)
+                }
+            }))
+            put("rezervacije", JSONArray(k.rezervacije.map {
+                JSONObject().apply {
+                    put("id", it.id); put("iznosCenti", it.iznosCenti); put("napomena", it.napomena); put("kreiranMillis", it.kreiranMillis)
+                    put("oslobodenoMillis", it.oslobodenoMillis ?: JSONObject.NULL)
                 }
             }))
             put("prilagodbeCiklusa", JSONArray(k.prilagodbe.map {
@@ -335,7 +351,8 @@ class BackupManager private constructor(private val context: Context) {
                     )
                 },
                 racuni = (o.optJSONArray("racuni") ?: JSONArray()).mapiraj {
-                    Racun(it.getLong("id"), it.getString("naziv"), it.getString("bojaHex"), it.getString("ikonaNaziv"), it.getLong("pocetnoStanjeCenti"), it.optInt("redoslijed"))
+                    Racun(it.getLong("id"), it.getString("naziv"), it.getString("bojaHex"), it.getString("ikonaNaziv"), it.getLong("pocetnoStanjeCenti"), it.optInt("redoslijed"),
+                        it.optBoolean("tekuci", false), it.dugiIliNull("sidroCenti"), it.dugiIliNull("sidroMillis"))
                 },
                 ciljevi = (o.optJSONArray("ciljevi") ?: JSONArray()).mapiraj {
                     CiljStednje(it.getLong("id"), it.getString("naziv"), it.getLong("ciljCenti"), it.getLong("ustedjenoCenti"), it.dugiIliNull("rokEpochDan"), it.getString("bojaHex"), it.getString("ikonaNaziv"), it.dugiIliNull("kreiranEpochDan"))
@@ -368,6 +385,9 @@ class BackupManager private constructor(private val context: Context) {
                 },
                 promjenePozicija = (o.optJSONArray("promjenePozicija") ?: JSONArray()).mapiraj {
                     PromjenaPozicije(it.getLong("id"), it.getLong("pozicijaId"), it.getLong("kolicinaMikro"), it.getLong("epochDan"), it.dugiIliNull("ulozenoCenti"), it.optString("napomena"))
+                },
+                rezervacije = (o.optJSONArray("rezervacije") ?: JSONArray()).mapiraj {
+                    Rezervacija(it.getLong("id"), it.getLong("iznosCenti"), it.optString("napomena"), it.getLong("kreiranMillis"), it.dugiIliNull("oslobodenoMillis"))
                 },
             )
         }

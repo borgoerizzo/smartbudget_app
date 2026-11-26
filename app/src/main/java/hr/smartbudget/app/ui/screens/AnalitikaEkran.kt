@@ -95,6 +95,8 @@ fun AnalitikaEkran(
     kripto: @Composable () -> Unit = {},
     imaUlaganja: Boolean = false,
     ulaganja: @Composable () -> Unit = {},
+    /** Kretanje stanja tekućeg računa. */
+    tekuci: @Composable () -> Unit = {},
 ) {
     val appPostavke = hr.smartbudget.app.data.AppPostavke.get(androidx.compose.ui.platform.LocalContext.current)
     val postavke by appPostavke.stanje.collectAsState()
@@ -117,6 +119,7 @@ fun AnalitikaEkran(
         val skrivene = postavke.skrivene["analitika"].orEmpty()
         poredaj(KARTICE_ANALITIKE, postavke.rasporedi["analitika"].orEmpty()).filter { it.kljuc !in skrivene }.forEach { k ->
             when (k.kljuc) {
+                "tekuci" -> item(k.kljuc) { tekuci() }
                 "tijek" -> item(k.kljuc) { TijekNovcaKartica(s) }
                 "raspodjela" -> item(k.kljuc) { RaspodjelaKartica(s) }
                 "usporedba" -> item(k.kljuc) { UsporedbaKartica(s) }
@@ -144,6 +147,7 @@ fun AnalitikaEkran(
 }
 
 val KARTICE_ANALITIKE = listOf(
+    StavkaRasporeda("tekuci", "Stanje tekućeg računa"),
     StavkaRasporeda("tijek", "Kumulativni tok novca"),
     StavkaRasporeda("raspodjela", "Rashodi po kategorijama"),
     StavkaRasporeda("usporedba", "Usporedba s prošlim ciklusom"),
@@ -192,7 +196,7 @@ private fun TijekNovcaKartica(s: AnalitikaStanje) {
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Cijan))
-            Text("  Stanje računa: ", style = Tip.oznaka)
+            Text("  Stanje svih računa: ", style = Tip.oznaka)
             Text(Novac.stanje(t?.stanje ?: 0), color = Neon.Cijan, fontSize = 13.sp, fontWeight = FontWeight.Bold, style = Tip.iznos)
         }
         if (tocke.isEmpty()) {

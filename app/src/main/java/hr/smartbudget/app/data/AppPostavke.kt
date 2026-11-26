@@ -180,6 +180,10 @@ class AppPostavke private constructor(context: Context) {
     }
 
     /** Za obavijest o minusu: šalje se samo pri prelasku iz plusa u minus, ne kod svake promjene. */
+    var zadnjeURezervi: Boolean
+        get() = prefs.getBoolean("zadnjeURezervi", false)
+        set(v) { prefs.edit().putBoolean("zadnjeURezervi", v).apply() }
+
     var zadnjeStanjeNegativno: Boolean
         get() = prefs.getBoolean("zadnjeNegativno", false)
         set(v) { prefs.edit().putBoolean("zadnjeNegativno", v).apply() }

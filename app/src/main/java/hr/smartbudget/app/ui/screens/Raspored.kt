@@ -39,8 +39,14 @@ data class StavkaRasporeda(val kljuc: String, val naziv: String, val opis: Strin
 /** Redoslijed iz postavki (nepoznati ključevi se izostavljaju, nove kartice dodaju na kraj). */
 fun poredaj(zadano: List<StavkaRasporeda>, spremljeno: List<String>): List<StavkaRasporeda> {
     val po = zadano.associateBy { it.kljuc }
-    val prvo = spremljeno.mapNotNull { po[it] }
-    return prvo + zadano.filter { it !in prvo }
+    val rezultat = spremljeno.mapNotNull { po[it] }.distinct().toMutableList()
+    // Nove kartice (dodane u novijoj verziji) dolaze na svoje zadano mjesto: iza kartice koja im u zadanom rasporedu prethodi.
+    zadano.forEachIndexed { i, k ->
+        if (k in rezultat) return@forEachIndexed
+        val prethodna = zadano.subList(0, i).lastOrNull { it in rezultat }
+        rezultat.add(if (prethodna == null) 0 else rezultat.indexOf(prethodna) + 1, k)
+    }
+    return rezultat
 }
 
 /**

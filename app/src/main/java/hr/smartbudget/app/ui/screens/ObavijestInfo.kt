@@ -34,7 +34,7 @@ fun ObavijestInfoDijalog(info: InfoObavijesti, stanjeCenti: Long, onAkcija: () -
         VrstaObavijesti.TJEDNI -> "calendar" to Neon.Zelena
         VrstaObavijesti.ROK -> "calendar" to Neon.Jantar
     }
-    val objasnjenje = when (info.vrsta) {
+    val objasnjenje = info.objasnjenje ?: when (info.vrsta) {
         VrstaObavijesti.PONAVLJAJUCI ->
             "Na dan naplate aplikacija je sama upisala ponavljajući prihod ili trošak, isto kao da ste ga unijeli ručno. " +
                 "Pravila (iznos, dan, pauza) uređujete u Budžetima → Ponavljajući unosi."
@@ -82,7 +82,7 @@ fun ObavijestInfoDijalog(info: InfoObavijesti, stanjeCenti: Long, onAkcija: () -
                     Text(info.tekst, color = boja, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Text(objasnjenje, color = Neon.TekstSvijetliSiv, fontSize = 14.sp, lineHeight = 20.sp)
-                if (info.vrsta == VrstaObavijesti.MINUS || info.vrsta == VrstaObavijesti.PONAVLJAJUCI) {
+                if ((info.vrsta == VrstaObavijesti.MINUS && info.objasnjenje == null) || info.vrsta == VrstaObavijesti.PONAVLJAJUCI) {
                     Text("Trenutno stanje računa: ${Novac.stanje(stanjeCenti)}", style = Tip.oznaka, color = if (stanjeCenti < 0) Neon.Crvena else Neon.TekstSiv)
                 }
             }
