@@ -453,6 +453,7 @@ private fun InstrumentEkran(osnova: Kotacija, onNatrag: () -> Unit) {
                 )
             }
         }
+        CijenaPoJedinici(k, vrijednost)
         KljucniPodaci(k)
         k.ocjena?.let { KarticaOcjene(it) }
         Text(
@@ -601,5 +602,35 @@ private fun KarticaOcjene(o: hr.smartbudget.app.data.OcjenaAnaliticara) {
             "Prosjek preporuka analitičara koji prate ovu dionicu (izvor: Yahoo Finance). Nije savjet za ulaganje.",
             style = Tip.malo.copy(fontSize = 12.sp, lineHeight = 16.sp),
         )
+    }
+}
+
+
+/** Roba: cijena preračunata s burzovne jedinice (unca, barel…) na gram, kilogram, litru…, i u osnovnu valutu. */
+@Composable
+private fun CijenaPoJedinici(k: Kotacija, cijena: Double) {
+    val p = hr.smartbudget.app.domain.JediniceRobe.za(k.simbol) ?: return
+    val ctx = LocalContext.current
+    var tecajevi by remember { mutableStateOf(hr.smartbudget.app.data.Tecajevi.spremljeno(ctx).first) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (tecajevi == null) hr.smartbudget.app.data.Tecajevi.hnb(ctx).onSuccess { tecajevi = it }
+    }
+    val (kod, _) = hr.smartbudget.app.domain.Portfelj.normalizirajValutu(k.valuta)
+    val osnovna = osnovnaValuta()
+    val uOsnovnu = if (kod == osnovna.kod) null
+        else hr.smartbudget.app.data.Tecajevi.pretvori(1.0, hr.smartbudget.app.domain.Valute.po(kod), osnovna, tecajevi, null)
+    Kartica(Modifier.fillMaxWidth(), razmak = 10.dp) {
+        Text("Cijena po jedinici", style = Tip.naslovKartice)
+        Text("Burza kotira po jedinici: ${p.izvorna}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+        hr.smartbudget.app.domain.JediniceRobe.cijene(k.simbol, cijena, k.valuta).forEach { (n, v) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(n, style = Tip.tijelo, modifier = Modifier.weight(1f))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(FormatTrzista.cijena(v, kod), style = Tip.iznos.copy(fontSize = 16.sp), color = Neon.Tekst)
+                    uOsnovnu?.let { Text("≈ " + hr.smartbudget.app.domain.Valute.iznos(v * it, osnovna), style = Tip.oznaka.copy(fontWeight = FontWeight.Normal)) }
+                }
+            }
+        }
+        if (uOsnovnu != null) Text("Preračun u ${osnovna.kod} po srednjem tečaju HNB-a.", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 11.sp))
     }
 }

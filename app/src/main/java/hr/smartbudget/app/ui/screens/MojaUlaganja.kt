@@ -560,10 +560,25 @@ fun PozicijaSheet(
                     k?.let { PromjenaDana(it.promjenaPosto) }
                 }
                 Text(v?.let { Valute.iznos(it, osnovna) } ?: "—", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = Neon.Tekst, maxLines = 1)
+                val roba = hr.smartbudget.app.domain.JediniceRobe.za(s.pozicija.simbol)
                 Text(
-                    "${Portfelj.kolicina(s.kolicinaMikro)} kom. × " + (k?.let { FormatTrzista.cijena(it.cijena, it.valuta) } ?: "—"),
+                    "${Portfelj.kolicina(s.kolicinaMikro)} ${if (roba != null) roba.kratica + " ×" else "kom. ×"} " + (k?.let { FormatTrzista.cijena(it.cijena, it.valuta) } ?: "—"),
                     style = Tip.iznos.copy(fontSize = 15.sp), color = Neon.TekstSvijetliSiv,
                 )
+                // Roba: količina i cijena u gramima, kilogramima, litrama… (burza kotira po unci, barelu…)
+                if (roba != null) {
+                    val (jed, faktor) = roba.jedinice.first()
+                    val naziv = jed.removePrefix("1 ")
+                    val uJedinici = s.kolicina / faktor
+                    val cijenaJed = k?.let { kk -> faktorValute(kk.valuta, t)?.let { kk.cijena * it * faktor } }
+                    Text(
+                        "Količina: ${FormatTrzista.broj(uJedinici, if (uJedinici < 100) 2 else 0)} $naziv  (1 ${roba.kratica} = ${roba.izvorna.substringAfter("(").removeSuffix(")")})",
+                        style = Tip.oznaka.copy(fontWeight = FontWeight.Normal),
+                    )
+                    cijenaJed?.let {
+                        Text("Cijena: ${Valute.iznos(it, osnovna)} ${hr.smartbudget.app.domain.JediniceRobe.po(jed)}", style = Tip.oznaka.copy(fontWeight = FontWeight.Normal))
+                    }
+                }
                 if (v != null && s.ulozeno != null && s.ulozenoPotpuno) {
                     val ul = s.ulozeno!! / 100.0
                     val d = v - ul

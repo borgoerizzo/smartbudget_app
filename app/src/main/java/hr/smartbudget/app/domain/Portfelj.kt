@@ -108,6 +108,7 @@ object Portfelj {
         "GBp", "GBX" -> "GBP" to 0.01
         "ZAc" -> "ZAR" to 0.01
         "ILA" -> "ILS" to 0.01
+        "USX" -> "USD" to 0.01 // američki centi (pšenica, kava)
         else -> valuta.uppercase() to 1.0
     }
 

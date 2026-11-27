@@ -27,6 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -278,6 +281,41 @@ private fun PonavljajuciKartica(
                 )
             }
         }
+        if (lista.isNotEmpty()) ZbrojPonavljajucih(lista.map { it.unos })
+    }
+}
+
+/** Zbroj aktivnih ponavljajućih unosa (mjesečno): prihodi, troškovi i razlika. */
+@Composable
+private fun ZbrojPonavljajucih(lista: List<PonavljajuciUnos>) {
+    val aktivni = lista.filter { it.aktivan }
+    val prihodi = aktivni.filter { it.tip == TipTransakcije.PRIHOD }.sumOf { it.iznosCenti }
+    val troskovi = aktivni.filter { it.tip == TipTransakcije.TROSAK }.sumOf { it.iznosCenti }
+    val pauzirani = lista.size - aktivni.size
+    Column(
+        Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).background(Neon.Ispuna)
+            .border(1.dp, Neon.RubSlab, androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Ukupno mjesečno", style = Tip.tijelo.copy(fontWeight = FontWeight.Bold))
+        if (prihodi > 0) RedZbroja("Prihodi", Novac.predznak(prihodi), Neon.Zelena)
+        if (troskovi > 0) RedZbroja("Troškovi", Novac.predznak(-troskovi), Neon.Crvena)
+        if (prihodi > 0 && troskovi > 0) {
+            androidx.compose.material3.HorizontalDivider(color = Neon.RubSlab)
+            RedZbroja("Razlika", Novac.predznak(prihodi - troskovi), if (prihodi >= troskovi) Neon.Zelena else Neon.Crvena)
+        }
+        Text(
+            "${aktivni.size} aktivnih" + (if (pauzirani > 0) " · bez $pauzirani pauziranih" else ""),
+            style = Tip.oznaka.copy(fontWeight = FontWeight.Normal, fontSize = 12.sp),
+        )
+    }
+}
+
+@Composable
+private fun RedZbroja(naziv: String, iznos: String, boja: androidx.compose.ui.graphics.Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(naziv, style = Tip.tijelo.copy(fontSize = 14.sp), modifier = Modifier.weight(1f))
+        Text(iznos, style = Tip.iznos.copy(fontSize = 15.sp), color = boja)
     }
 }
 

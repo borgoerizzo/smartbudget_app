@@ -59,8 +59,9 @@ object Novac {
     /** Za polje unosa: 1250,00 (bez tisućica). */
     fun zaUnos(centi: Long): String = BigDecimal.valueOf(centi, 2).toPlainString().replace('.', ',')
 
+    /** Postotak s nedjeljivim razmakom, da se znak % ne prelomi u novi red. */
     fun postotak(v: Double, decimala: Int = 1): String =
-        String.format(Locale.forLanguageTag("hr-HR"), "%.${decimala}f %%", v).replace('.', ',')
+        String.format(Locale.forLanguageTag("hr-HR"), "%.${decimala}f %%", v).replace('.', ',')
 }
 
 object HrDatum {
